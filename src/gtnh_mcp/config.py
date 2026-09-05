@@ -2,9 +2,40 @@
 
 import json
 import os
+import re
 from pathlib import Path
 
-from pydantic import BaseModel, ConfigDict, Field, SecretStr, model_validator
+from pydantic import (
+    BaseModel,
+    ConfigDict,
+    Field,
+    SecretStr,
+    field_validator,
+    model_validator,
+)
+
+
+def validate_world_directory(value: str) -> str:
+    if (
+        not re.fullmatch(r"[A-Za-z0-9_][A-Za-z0-9_.-]{0,63}", value)
+        or value.lower()
+        in {
+            "visualprospecting",
+            "backup",
+            "backups",
+            "con",
+            "prn",
+            "aux",
+            "nul",
+            *{f"com{i}" for i in range(1, 10)},
+            *{f"lpt{i}" for i in range(1, 10)},
+        }
+        or value.endswith(".")
+    ):
+        raise ValueError(
+            "WORLD_DIRECTORY must be a safe, distinct single directory name"
+        )
+    return value
 
 
 class Settings(BaseModel):
@@ -23,11 +54,21 @@ class Settings(BaseModel):
     backup_dir: Path = Path("/backups")
     state_dir: Path = Path("/state")
     container_name: str = "gtnh"
+    world_directory: str = "World"
     stop_timeout: int = Field(default=180, ge=1)
     startup_timeout: int = Field(default=900, ge=1)
     max_archive_bytes: int = Field(default=100 * 1024**3, ge=1)
     max_archive_members: int = Field(default=1000000, ge=1)
     free_space_reserve: int = Field(default=1024**3, ge=0)
+
+    @field_validator("world_directory")
+    @classmethod
+    def check_world_directory(cls, value):
+        return validate_world_directory(value)
+
+    @property
+    def world_dirs(self) -> tuple[str, str]:
+        return self.world_directory, "visualprospecting"
 
     @model_validator(mode="after")
     def validate_secrets(self):

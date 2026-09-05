@@ -2,6 +2,8 @@
 
 ## Current implementation
 
+- Backups support ZIP (Stored/Deflate with CRC validation) and tar.gz. `WORLD_DIRECTORY` defaults to `World`; NAS uses `backups/`. New jobs persist both restored directory names, while legacy journals without them retain `Worlds` semantics.
+
 - Python 3.13 / uv. `src/gtnh_mcp` contains configuration, signed identity validation, RCON, MCP tools, archive validation, Docker control and the persistent restore worker.
 - `astrbot_plugin` is the separately installed AstrBot bridge. Sign actual message identities; never accept identity or role from model arguments. Confirmation is a command, not an LLM tool.
 - Its signing secret comes from AstrBot's `GTNH_AUTH_SECRET`; plugin settings only contain the MCP URL. Do not register the service a second time through AstrBot native MCP configuration.
@@ -14,7 +16,7 @@
 - Install: `uv sync --locked --group dev`.
 - Validate: `uv run pytest`, `uv run ruff check .`, `uv run ruff format --check .`.
 - Optional simulated black-box test: `uv run pytest -m blackbox -q`; excluded by default. Its test-only TCP helper transport does not replace production Unix-socket deployment verification.
-- Build images: `docker compose build`. Real restore acceptance requires an isolated GTNH container and actual backup; never use production as the first test.
+- Build images on NAS: `docker compose build`. Do not invoke local Docker (including config) or WSL. Real restore acceptance requires an isolated GTNH container and actual backup; never use production as the first test.
 - Update this file when architecture, commands or constraints change. Update relevant docs alongside behavior/configuration changes. Record limitations honestly.
 
 ## Invariants

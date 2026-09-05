@@ -64,13 +64,19 @@ FastMCP Streamable HTTP 的监听端口，默认 8000。MCP 固定监听 `127.0.
 
 ### `GTNH_SERVER_ROOT`
 
-NAS 上的游戏服务端根目录，必须直接包含大小写准确的 `Worlds` 和 `visualprospecting`。恢复服务把它映射为 `/server`，并在其中创建 `.gtnh-restore/<任务ID>` 保存暂存和新旧存档。
+NAS 上的游戏服务端根目录，模板为 `/volume2/sharev9/minecraft/gtnh`，必须直接包含 `WORLD_DIRECTORY` 指定的世界目录和 `visualprospecting`。恢复服务把它映射为 `/server`，并在其中创建 `.gtnh-restore/<任务ID>` 保存暂存和新旧存档。
 
-这不是本项目代码目录。`Worlds`、`visualprospecting` 和 `.gtnh-restore` 必须在同一文件系统中；两个世界目录不能分别作为独立 bind mount，否则无法保证原子目录切换。
+这不是本项目代码目录。世界目录、`visualprospecting` 和 `.gtnh-restore` 必须在同一文件系统中；两个世界目录不能分别作为独立 bind mount，否则无法保证原子目录切换。
 
 ### `GTNH_BACKUP_DIR`
 
-NAS 上存放现有 `*.tar.gz` 的目录，通常是 `${GTNH_SERVER_ROOT}/backup`。它以只读方式映射为 `/backups`。每个归档解压后必须只包含 `Worlds` 和 `visualprospecting` 两个顶层目录。
+NAS 上存放现有 `*.zip` 或 `*.tar.gz` 的目录，模板为 `/volume2/sharev9/minecraft/gtnh/backups`。它以只读方式映射为 `/backups`。每个归档解压后必须只包含配置的世界目录和 `visualprospecting` 两个顶层目录。
+
+### `WORLD_DIRECTORY`
+
+服务端根目录下的世界目录名，默认 `World`，大小写必须与磁盘及备份内部一致。旧部署若实际使用 `Worlds`，应明确填写 `Worlds`，程序不会自动重命名存档。只接受单层目录名：1–64 个英文字母、数字、下划线、连字符或点，首字符须为字母、数字或下划线，不得以点结尾，也不能使用保留名称（如 `backups`、`visualprospecting`）。它不是完整路径，不会修改 Minecraft 的 `level-name` 配置。
+
+新恢复任务保存申请时的两个目录名，后续切换和回滚均使用保存值；没有此字段的旧任务按原来的 `Worlds` 与 `visualprospecting` 处理。修改配置前应完成当前任务。
 
 ### `STOP_TIMEOUT`
 
@@ -82,7 +88,7 @@ NAS 上存放现有 `*.tar.gz` 的目录，通常是 `${GTNH_SERVER_ROOT}/backup
 
 ### `MAX_ARCHIVE_BYTES`
 
-单个备份内所有普通文件解压后大小之和的上限，单位字节，默认 `107374182400`（100 GiB）。它不是 `.tar.gz` 压缩包大小，也不限制整个备份目录。
+单个备份内所有普通文件解压后大小之和的上限，单位字节，默认 `107374182400`（100 GiB）。它不是 ZIP/tar.gz 压缩包大小，也不限制整个备份目录。
 
 ### `MAX_ARCHIVE_MEMBERS`
 

@@ -44,6 +44,7 @@ services:
     environment:
       <<: *settings
       CONTAINER_NAME: ${GTNH_CONTAINER_NAME:?Set GTNH_CONTAINER_NAME}
+      WORLD_DIRECTORY: ${WORLD_DIRECTORY:-World}
       SERVER_ROOT: /server
       BACKUP_DIR: /backups
       STATE_DIR: /state

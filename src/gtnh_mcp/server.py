@@ -140,7 +140,7 @@ def create_server(settings: Settings, rcon=None, helper=None) -> FastMCP:
 
     @server.tool
     async def list_backups() -> list[dict]:
-        """查询现有 tar.gz 备份的 ID、文件名、大小和修改时间。"""
+        """查询现有 ZIP/tar.gz 备份的 ID、文件名、格式、大小和修改时间。"""
         return await restore_call("backups")
 
     @server.tool

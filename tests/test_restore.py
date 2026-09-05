@@ -5,7 +5,8 @@ import pytest
 from conftest import make_archive
 
 from gtnh_mcp.auth import Actor, Denied
-from gtnh_mcp.backups import WORLD_DIRS, Backups
+from gtnh_mcp.backups import LEGACY_WORLD_DIRS as WORLD_DIRS
+from gtnh_mcp.backups import Backups
 from gtnh_mcp.rcon import OperationError
 from gtnh_mcp.restore import RestoreManager, atomic_json, move
 
@@ -249,7 +250,8 @@ def test_partial_switch_failure_rolls_back(manager, settings, monkeypatch):
 
 
 @pytest.mark.parametrize("moves", [0, 1, 2, 3, 4])
-def test_interrupted_switch_recovery(manager, settings, moves):
+@pytest.mark.parametrize("legacy", [False, True])
+def test_interrupted_switch_recovery(manager, settings, moves, legacy):
     job = request(manager)
     stored = manager.load(job["id"])
     workspace = settings.server_root / ".gtnh-restore" / job["id"]
@@ -266,6 +268,9 @@ def test_interrupted_switch_recovery(manager, settings, moves):
                 (workspace / "incoming" / name, settings.server_root / name),
             ]
         )
+    if legacy:
+        stored.pop("world_dirs")
+        settings.world_directory = "World"
     manager.save(stored, "switching")
     atomic_json(manager.marker, {"job": job["id"]})
     for source, destination in transitions[:moves]:

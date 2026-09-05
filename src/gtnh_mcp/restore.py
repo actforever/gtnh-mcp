@@ -13,8 +13,8 @@ from pathlib import Path
 from filelock import FileLock, Timeout
 
 from .auth import Actor, Denied
-from .backups import WORLD_DIRS, Backups
-from .config import Settings
+from .backups import LEGACY_WORLD_DIRS, Backups
+from .config import Settings, validate_world_directory
 from .rcon import OperationError, RconService
 
 logger = logging.getLogger(__name__)
@@ -121,9 +121,24 @@ class RestoreManager:
                 raise Denied("无权查看此任务")
             return sorted(result, key=lambda job: job["created"], reverse=True)
 
-    def validate_layout(self):
+    @staticmethod
+    def job_dirs(job):
+        names = job.get("world_dirs", list(LEGACY_WORLD_DIRS))
+        if (
+            not isinstance(names, list)
+            or len(names) != 2
+            or names[1] != "visualprospecting"
+        ):
+            raise OperationError("恢复任务的目录记录无效，需人工检查")
+        try:
+            validate_world_directory(names[0])
+        except (ValueError, TypeError) as exc:
+            raise OperationError("恢复任务的世界目录记录无效") from exc
+        return tuple(names)
+
+    def validate_layout(self, world_dirs=None):
         root = self.settings.server_root
-        for name in WORLD_DIRS:
+        for name in world_dirs or self.settings.world_dirs:
             path = root / name
             if (
                 path.is_symlink()
@@ -132,7 +147,7 @@ class RestoreManager:
                 or os.path.ismount(path)
             ):
                 raise OperationError(
-                    "Worlds 和 visualprospecting 必须是存档根目录同一文件系统内的真实目录，不能单独挂载"
+                    "世界目录和 visualprospecting 必须是存档根目录同一文件系统内的真实目录，不能单独挂载"
                 )
         workspace = root / ".gtnh-restore"
         if workspace.is_symlink():
@@ -154,6 +169,7 @@ class RestoreManager:
                 "created": time.time(),
                 "expires": time.time() + 600,
                 "container": snapshot,
+                "world_dirs": list(self.settings.world_dirs),
                 "message": "请在十分钟内发送 /gtnh_confirm 任务编号；恢复会替换当前存档",
             }
             self.save(job)
@@ -229,9 +245,10 @@ class RestoreManager:
             job = self.load(job_id)
             try:
                 self.save(job, "preparing")
-                self.validate_layout()
+                world_dirs = self.job_dirs(job)
+                self.validate_layout(world_dirs)
                 workspace = self.settings.server_root / ".gtnh-restore" / job_id
-                self.backups.stage(
+                Backups(self.settings, world_dirs).stage(
                     job["backup"]["id"], job["backup"]["sha256"], workspace / "incoming"
                 )
                 (workspace / "previous").mkdir()
@@ -244,7 +261,7 @@ class RestoreManager:
                 self.save(job, "stopping")
                 self.control.stop(job["container"])
                 self.save(job, "switching")
-                for name in WORLD_DIRS:
+                for name in world_dirs:
                     self.control.assert_stopped(job["container"])
                     move(
                         self.settings.server_root / name, workspace / "previous" / name
@@ -275,10 +292,11 @@ class RestoreManager:
 
     def rollback(self, job: dict, reason: str):
         try:
+            world_dirs = self.job_dirs(job)
             self.save(job, "rolling_back", message=reason)
             self.control.stop(job["container"])
             workspace = self.settings.server_root / ".gtnh-restore" / job["id"]
-            for name in WORLD_DIRS:
+            for name in world_dirs:
                 previous = workspace / "previous" / name
                 live = self.settings.server_root / name
                 failed = workspace / "failed" / name

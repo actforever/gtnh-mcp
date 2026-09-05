@@ -17,6 +17,7 @@ def settings(tmp_path):
         server_root=tmp_path / "server",
         backup_dir=tmp_path / "backup",
         state_dir=tmp_path / "state",
+        world_directory="Worlds",  # Keep legacy tar.gz fixtures alongside ZIP tests.
         free_space_reserve=0,
         stop_timeout=1,
         startup_timeout=1,
