@@ -6,7 +6,8 @@
 - `astrbot_plugin` is the separately installed AstrBot bridge. Sign actual message identities; never accept identity or role from model arguments. Confirmation is a command, not an LLM tool.
 - Its signing secret comes from AstrBot's `GTNH_AUTH_SECRET`; plugin settings only contain the MCP URL. Do not register the service a second time through AstrBot native MCP configuration.
 - MCP and AstrBot use Linux Docker host networking. Only the restore helper mounts the Docker socket and server directories; MCP calls it through a Unix socket.
-- Details belong in `docs/architecture.md`, `docs/security.md`, `docs/restore.md`, and `docs/deployment.md`.
+- Details belong in `docs/architecture.md`, `docs/security.md`, `docs/restore.md`, `docs/configuration.md`, `docs/deployment.md`, and `docs/testing.md`.
+- `compose.chat.yaml` is the optional Linux host-network AstrBot + NapCat deployment. Keep every `.env.example` variable documented in `docs/configuration.md` and the end-to-end NAS procedure in `docs/deployment.md`.
 
 ## Development
 

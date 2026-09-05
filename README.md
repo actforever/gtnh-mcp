@@ -6,7 +6,8 @@
 
 使用 FastMCP Streamable HTTP，默认地址 `http://127.0.0.1:8000/mcp`。MCP 和 AstrBot 使用 Linux Docker host 网络；恢复服务独立持有 Docker 控制权限，通过私有 Unix socket 接受请求。
 
-- [部署与 AstrBot 接入](docs/deployment.md)
+- [NAS 完整部署：GTNH + MCP + AstrBot + NapCat](docs/deployment.md)
+- [全部环境变量与配置参考](docs/configuration.md)
 - [架构与模块](docs/architecture.md)
 - [身份与工具权限](docs/security.md)
 - [恢复流程与人工处理](docs/restore.md)
