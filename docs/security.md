@@ -8,7 +8,7 @@
 | `list_backups` | 是 | 是 |
 | `restore_status` | 本人任务 | 全部任务 |
 | `list_whitelist`, `add_whitelist`, `remove_whitelist` | 否 | 是 |
-| `request_restore` | 否 | 是 |
+| `request_restore`, `request_undo_restore` | 否 | 是 |
 | `confirm_restore` | 否 | 原申请人在原群发送确认指令 |
 
 无任意 RCON、shell、任意文件路径或容器选择工具。公告只允许最多 300 字符的单行文本；玩家名只能由 1–16 位英文字母、数字和下划线组成。

@@ -4,6 +4,8 @@
 
 支持在线玩家、公告、保存世界、白名单管理、备份查询、恢复申请与进度查询。恢复支持 `backups/*.zip` 和 `*.tar.gz`，处理 `WORLD_DIRECTORY`（默认 `World`）和 `visualprospecting`，保留旧存档并支持失败回滚。
 
+**回档后反悔也可以撤销：** 管理员查询成功任务编号，让机器人“撤销这次回档”，再发送新的 `/gtnh_confirm <撤销任务编号>`。程序恢复那次回档前的完整存档，并保留撤销前的当前世界；不会合并两段游戏进度。撤销本身也是恢复任务，成功后仍可再次撤销，详见 [撤销流程](docs/restore.md#撤销已经完成的回档)。
+
 使用 FastMCP Streamable HTTP，默认地址 `http://127.0.0.1:8000/mcp`。MCP 和 AstrBot 使用 Linux Docker host 网络；恢复服务独立持有 Docker 控制权限，通过私有 Unix socket 接受请求。
 
 ## 运行架构

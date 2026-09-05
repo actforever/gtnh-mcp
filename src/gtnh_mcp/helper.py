@@ -25,7 +25,7 @@ from .restore import RestoreManager
 
 class HelperCall(BaseModel):
     model_config = ConfigDict(extra="forbid")
-    action: Literal["backups", "request", "confirm", "status"]
+    action: Literal["backups", "request", "undo", "confirm", "status"]
     value: str = ""
 
 
@@ -58,6 +58,8 @@ def create_app(settings: Settings, manager: RestoreManager) -> Starlette:
                 operation = manager.backups.listing
             elif call.action == "request":
                 operation = partial(manager.request, actor, call.value)
+            elif call.action == "undo":
+                operation = partial(manager.request_undo, actor, call.value)
             else:
                 operation = partial(manager.status, actor, call.value)
             result = await asyncio.to_thread(operation)

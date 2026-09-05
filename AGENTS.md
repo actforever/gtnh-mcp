@@ -3,6 +3,7 @@
 ## Current implementation
 
 - Backups support ZIP (Stored/Deflate with CRC validation) and tar.gz. `WORLD_DIRECTORY` defaults to `World`; NAS uses `backups/`. New jobs persist both restored directory names, while legacy journals without them retain `Worlds` semantics.
+- `request_undo_restore` creates a separately confirmed restore from a successful job's retained `previous` directories. `snapshots` fingerprints and copies the source without consuming it; the same state machine preserves the current world and handles failure rollback. Keep this tool registered in both MCP and the AstrBot bridge; confirmation remains command-only.
 
 - Python 3.13 / uv. `src/gtnh_mcp` contains configuration, signed identity validation, RCON, MCP tools, archive validation, Docker control and the persistent restore worker.
 - `astrbot_plugin` is the separately installed AstrBot bridge. Sign actual message identities; never accept identity or role from model arguments. Confirmation is a command, not an LLM tool.

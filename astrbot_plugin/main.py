@@ -87,6 +87,15 @@ class GTNHPlugin(Star):
         """
         return await self.call(event, "restore_status", {"job_id": job_id})
 
+    @filter.llm_tool(name="gtnh_request_undo_restore")
+    async def request_undo_restore(self, event: AstrMessageEvent, job_id: str):
+        """管理员申请撤销成功回档，恢复那次回档前的存档，不合并进度。须本人随后发送确认指令。
+
+        Args:
+            job_id(string): 要撤销的成功恢复任务编号，由恢复状态工具查询
+        """
+        return await self.call(event, "request_undo_restore", {"job_id": job_id})
+
     @filter.command("gtnh_confirm", priority=100)
     async def confirm(self, event: AstrMessageEvent, job_id: str):
         # No llm_tool decorator: only the actual message command can mint this scope.

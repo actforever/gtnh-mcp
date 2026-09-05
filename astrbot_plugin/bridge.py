@@ -19,6 +19,7 @@ TOOLS = {
     "remove_whitelist",
     "list_backups",
     "request_restore",
+    "request_undo_restore",
     "restore_status",
 }
 

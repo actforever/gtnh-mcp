@@ -49,6 +49,12 @@ docker inspect <GTNH容器名> --format '{{json .Mounts}}'
 
 在安排好的停服窗口，先保存游戏并通过现有管理方式停止 GTNH，再备份原 Compose 和启动脚本。将本项目的 `examples/gtnh/startserver-managed.sh` 复制到 `/volume2/sharev9/minecraft/gtnh/startserver-managed.sh`（保持 LF 换行）。该脚本保留当前 Java 21 启动参数、8 GiB 堆和 `java9args.txt`，改为单次 `exec java`。
 
+在本项目根目录执行复制（NAS 用户需要目标目录写权限）：
+
+```sh
+cp examples/gtnh/startserver-managed.sh /volume2/sharev9/minecraft/gtnh/startserver-managed.sh
+```
+
 修改 **GTNH 自己的 Compose**：工作目录保持 `/gtnh`，挂载保持服务端根目录，移除原 `command`，将入口和重启策略设置为：
 
 ```yaml
@@ -208,7 +214,7 @@ docker compose -f compose.chat.yaml restart astrbot
 mcp_url = http://127.0.0.1:8000/mcp
 ```
 
-改过 `MCP_PORT` 时同步修改该地址。启用九个 `gtnh_*` 对话工具。不要再从 AstrBot 原生 MCP 页面添加本服务，否则那条连接无法携带群成员的可信身份。
+改过 `MCP_PORT` 时同步修改该地址。启用十个 `gtnh_*` 对话工具（包括 `gtnh_request_undo_restore`）。不要再从 AstrBot 原生 MCP 页面添加本服务，否则那条连接无法携带群成员的可信身份。
 
 ## 9. 核对群和管理员身份
 
@@ -250,6 +256,8 @@ docker compose up -d --force-recreate
 成功后确认 GTNH 和 RCON 可用、两个在线目录来自备份、旧存档位于 `${GTNH_SERVER_ROOT}/.gtnh-restore/<任务编号>/previous/`，且容器原重启策略已恢复。再次发送同一确认编号不应再次停服。
 
 出现 `manual_intervention` 时不要删除维护标记或继续写操作，按 [恢复文档](restore.md) 检查现场。
+
+如需撤销成功回档，让机器人根据该成功任务编号申请撤销，再由本人确认新任务编号。测试服应验证世界回到原回档前状态，撤销前的世界保存在新任务的 `previous`，详见 [撤销回档](restore.md#撤销已经完成的回档)。更新到支持撤销的版本时，要同时更新 MCP/恢复镜像和 AstrBot 插件。
 
 ## 12. 更新和日常管理
 

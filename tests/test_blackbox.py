@@ -174,7 +174,7 @@ async def test_full_blackbox(services):
         async with ClientSession(read, write) as session:
             await session.initialize()
             tools = (await session.list_tools()).tools
-            assert len(tools) == 10
+            assert len(tools) == 11
             for tool in tools:
                 assert not {"user", "role", "platform", "group", "token"} & set(
                     tool.inputSchema.get("properties", {})
@@ -286,3 +286,44 @@ async def test_full_blackbox(services):
         contents = Path(path).read_text(encoding="utf-8")
         assert settings.auth_secret.get_secret_value() not in contents
         assert settings.rcon_password.get_secret_value() not in contents
+
+
+async def test_undo_blackbox(services):
+    settings = services["settings"]
+    bridge = Bridge(services["url"], settings.auth_secret.get_secret_value())
+    backup = data(await call(services, "list_backups"))[0]
+    original = data(
+        await call(services, "request_restore", {"backup_id": backup["id"]})
+    )
+    await bridge.confirm(Event(), original["id"])
+    assert (await await_job(services, original["id"]))["phase"] == "succeeded"
+    assert (
+        await call(
+            services, "request_undo_restore", {"job_id": original["id"]}, sub="member"
+        )
+    ).isError
+    response = json.loads(
+        await bridge.tool(Event(), "request_undo_restore", {"job_id": original["id"]})
+    )
+    undo = response.get("result", response)
+    assert undo["phase"] == "pending"
+    assert undo["undo_of"] == original["id"]
+    assert (settings.server_root / "Worlds/data.txt").read_text() == "new"
+    assert (await call(services, "confirm_restore", {"job_id": undo["id"]})).isError
+    await bridge.confirm(Event(), undo["id"])
+    assert (await await_job(services, undo["id"]))["phase"] == "succeeded"
+    for name in ("Worlds", "visualprospecting"):
+        assert (settings.server_root / name / "data.txt").read_text() == "old"
+        assert (
+            settings.server_root
+            / ".gtnh-restore"
+            / undo["id"]
+            / "previous"
+            / name
+            / "data.txt"
+        ).read_text() == "new"
+    await bridge.confirm(Event(), undo["id"])
+    assert (
+        httpx.get(services["docker"] + "/observations").json()["commands"].count("stop")
+        == 2
+    )

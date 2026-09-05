@@ -83,4 +83,5 @@ def test_confirmation_handler_is_not_registered_as_tool():
     decorators = [ast.unparse(node) for node in functions["confirm"].decorator_list]
     assert any("filter.command" in node for node in decorators)
     assert not any("llm_tool" in node for node in decorators)
-    assert len(module.TOOLS) == 9
+    assert len(module.TOOLS) == 10
+    assert "request_undo_restore" in module.TOOLS

@@ -16,6 +16,7 @@ from .auth import Actor, Denied
 from .backups import LEGACY_WORLD_DIRS, Backups
 from .config import Settings, validate_world_directory
 from .rcon import OperationError, RconService
+from .snapshots import PreviousSnapshot
 
 logger = logging.getLogger(__name__)
 TERMINAL = {"succeeded", "rolled_back", "failed", "manual_intervention"}
@@ -99,6 +100,8 @@ class RestoreManager:
             "expires",
             "updated",
             "message",
+            "undo_of",
+            "world_dirs",
         )
         return {key: job[key] for key in keys if key in job}
 
@@ -154,12 +157,34 @@ class RestoreManager:
             raise OperationError("恢复工作目录不能是符号链接")
 
     def request(self, actor: Actor, backup_id: str) -> dict:
+        return self.create_request(actor, backup_id)
+
+    def request_undo(self, actor: Actor, job_id: str) -> dict:
+        """Request a new restore from a successful job's retained previous worlds."""
+        actor.require_admin(self.settings)
+        with self.mutex:
+            source = self.load(job_id)
+            if source["phase"] != "succeeded":
+                raise OperationError("只能撤销已成功完成且保留旧存档的任务")
+            return self.create_request(actor, job_id, source)
+
+    def create_request(self, actor: Actor, backup_id: str, source=None) -> dict:
         actor.require_admin(self.settings)
         with self.mutex:
             if self.marker.exists():
                 raise OperationError("已有恢复任务或需要人工检查")
-            self.validate_layout()
-            backup = self.backups.preflight(backup_id)
+            world_dirs = (
+                self.job_dirs(source)
+                if source is not None
+                else self.settings.world_dirs
+            )
+            self.validate_layout(world_dirs)
+            backups = (
+                PreviousSnapshot(self.settings, source["id"], world_dirs)
+                if source is not None
+                else self.backups
+            )
+            backup = backups.preflight(backup_id)
             snapshot = self.control.snapshot()
             job = {
                 "id": secrets.token_hex(16),
@@ -169,9 +194,14 @@ class RestoreManager:
                 "created": time.time(),
                 "expires": time.time() + 600,
                 "container": snapshot,
-                "world_dirs": list(self.settings.world_dirs),
+                "world_dirs": list(world_dirs),
                 "message": "请在十分钟内发送 /gtnh_confirm 任务编号；恢复会替换当前存档",
             }
+            if source is not None:
+                job["undo_of"] = source["id"]
+                job["message"] = (
+                    "申请撤销回档：恢复到该任务执行前的存档，不合并后续进度；当前世界也会保留。请在十分钟内发送 /gtnh_confirm 任务编号"
+                )
             self.save(job)
             return self.public(job)
 
@@ -248,7 +278,17 @@ class RestoreManager:
                 world_dirs = self.job_dirs(job)
                 self.validate_layout(world_dirs)
                 workspace = self.settings.server_root / ".gtnh-restore" / job_id
-                Backups(self.settings, world_dirs).stage(
+                if "undo_of" in job:
+                    source = self.load(job["undo_of"])
+                    if (
+                        source["phase"] != "succeeded"
+                        or self.job_dirs(source) != world_dirs
+                    ):
+                        raise OperationError("撤销来源任务已变化，请重新申请")
+                    backups = PreviousSnapshot(self.settings, source["id"], world_dirs)
+                else:
+                    backups = Backups(self.settings, world_dirs)
+                backups.stage(
                     job["backup"]["id"], job["backup"]["sha256"], workspace / "incoming"
                 )
                 (workspace / "previous").mkdir()

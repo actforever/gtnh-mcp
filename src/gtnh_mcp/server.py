@@ -149,6 +149,11 @@ def create_server(settings: Settings, rcon=None, helper=None) -> FastMCP:
         return await restore_call("request", backup_id, admin=True)
 
     @server.tool
+    async def request_undo_restore(job_id: str) -> dict:
+        """管理员申请撤销一次成功回档，恢复该任务执行前的存档；须本人确认，不合并进度。"""
+        return await restore_call("undo", job_id, admin=True)
+
+    @server.tool
     async def confirm_restore(job_id: str) -> dict:
         """仅供可信插件确认指令调用；普通工具凭据不能执行。"""
         return await restore_call("confirm", job_id, admin=True, confirm=True)
