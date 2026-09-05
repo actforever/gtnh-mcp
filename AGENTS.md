@@ -12,6 +12,7 @@
 
 - Install: `uv sync --locked --group dev`.
 - Validate: `uv run pytest`, `uv run ruff check .`, `uv run ruff format --check .`.
+- Optional simulated black-box test: `uv run pytest -m blackbox -q`; excluded by default. Its test-only TCP helper transport does not replace production Unix-socket deployment verification.
 - Build images: `docker compose build`. Real restore acceptance requires an isolated GTNH container and actual backup; never use production as the first test.
 - Update this file when architecture, commands or constraints change. Update relevant docs alongside behavior/configuration changes. Record limitations honestly.
 
@@ -29,3 +30,4 @@
 - Every Codex-assisted commit must include: `Co-authored-by: Codex <codex@openai.com>`.
 - The user authorizes staged, ordered commits on `main` during this implementation. Keep each commit coherent. Never include deployment secrets or IDE state.
 - Use Windows-local `uv` for development and tests; do not use WSL. Linux container acceptance is a separate deployment check.
+- The user will perform real NAS/GTNH acceptance. Do not expand local work into strict GTNH/AstrBot/Docker environment testing; keep deployment and recovery documentation complete.

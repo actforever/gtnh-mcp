@@ -532,7 +532,9 @@ dependencies = [
     { name = "filelock" },
     { name = "httpx" },
     { name = "mcrcon" },
+    { name = "pydantic" },
     { name = "pyjwt" },
+    { name = "starlette" },
     { name = "uvicorn" },
 ]
 
@@ -546,11 +548,13 @@ dev = [
 [package.metadata]
 requires-dist = [
     { name = "docker", specifier = ">=7.1,<8" },
-    { name = "fastmcp", specifier = ">=3.0,<4" },
+    { name = "fastmcp", specifier = ">=3.4.7,<4" },
     { name = "filelock", specifier = ">=3.16,<4" },
     { name = "httpx", specifier = ">=0.28,<1" },
     { name = "mcrcon", specifier = "==0.7.0" },
+    { name = "pydantic", specifier = ">=2.11,<3" },
     { name = "pyjwt", specifier = ">=2.10,<3" },
+    { name = "starlette", specifier = ">=1,<2" },
     { name = "uvicorn", specifier = ">=0.35,<1" },
 ]
 

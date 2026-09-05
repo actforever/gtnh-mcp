@@ -9,9 +9,9 @@ from .rcon import OperationError, RconService
 
 
 class ContainerControl:
-    def __init__(self, settings: Settings):
+    def __init__(self, settings: Settings, client=None):
         self.settings = settings
-        self.client = docker.DockerClient(
+        self.client = client or docker.DockerClient(
             base_url="unix:///var/run/docker.sock", timeout=15
         )
         self.rcon = RconService(settings)

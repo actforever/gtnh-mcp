@@ -10,6 +10,7 @@
 - [架构与模块](docs/architecture.md)
 - [身份与工具权限](docs/security.md)
 - [恢复流程与人工处理](docs/restore.md)
+- [本地验证与 NAS 验收](docs/testing.md)
 - [开发约定](AGENTS.md)
 
 本地开发（Windows PowerShell）：

@@ -5,9 +5,10 @@ import re
 import time
 from datetime import timedelta
 
+import httpx
 import jwt
 from mcp import ClientSession
-from mcp.client.streamable_http import streamablehttp_client
+from mcp.client.streamable_http import streamable_http_client
 
 TOOLS = {
     "list_players",
@@ -29,9 +30,9 @@ class Bridge:
         self.url, self.secret = url, secret
 
     def token(self, event, confirmation: str = "") -> str:
-        platform = str(event.get_platform_name())
+        platform = str(event.get_platform_name() or "")
         group = str(event.get_group_id() or "")
-        user = str(event.get_sender_id())
+        user = str(event.get_sender_id() or "")
         if not group or any(
             not value or ":" in value or any(ord(c) < 32 for c in value)
             for value in (platform, group, user)
@@ -58,12 +59,15 @@ class Bridge:
         token = self.token(event, confirmation)
         try:
             # A fresh MCP session for every invocation prevents identity sharing.
-            async with streamablehttp_client(
-                self.url,
-                headers={"Authorization": f"Bearer {token}"},
-                timeout=620,
-                sse_read_timeout=620,
-            ) as (read, write, _):
+            async with (
+                httpx.AsyncClient(
+                    headers={"Authorization": f"Bearer {token}"},
+                    timeout=620,
+                    trust_env=False,
+                ) as http_client,
+                streamable_http_client(self.url, http_client=http_client) as streams,
+            ):
+                read, write, _ = streams
                 async with ClientSession(read, write) as session:
                     await session.initialize()
                     result = await session.call_tool(

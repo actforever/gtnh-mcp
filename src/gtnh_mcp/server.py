@@ -41,14 +41,17 @@ class HelperClient:
     def __init__(self, settings: Settings):
         self.settings = settings
 
-    async def call(self, token: str, action: str, value: str = ""):
+    def connection(self):
         transport = httpx.AsyncHTTPTransport(
             uds=str(self.settings.socket_path), retries=0
         )
+        return httpx.AsyncClient(
+            transport=transport, base_url="http://helper", timeout=600
+        )
+
+    async def call(self, token: str, action: str, value: str = ""):
         try:
-            async with httpx.AsyncClient(
-                transport=transport, base_url="http://helper", timeout=600
-            ) as client:
+            async with self.connection() as client:
                 response = await client.post(
                     "/rpc",
                     json={"action": action, "value": value},

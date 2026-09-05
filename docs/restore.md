@@ -24,6 +24,7 @@
 - `failed`：停服前失败，当前存档未修改；暂存内容可能保留。
 - `rolled_back`：停服或切换后的错误触发回滚，旧存档已恢复并通过 RCON 就绪检测。
 - `manual_intervention`：无法确认停服、容器被替换、目录状态异常或回滚启动失败；保留现场与维护标记，继续拒绝写操作。
+- 启动时发现 manual_intervention 任务会重新建立维护标记，即使 runtime 标记意外丢失也不会自动解除限制。
 - 服务启动时扫描持久化任务。queued/preparing 中断标记失败；stopping/switching/starting 或回滚途中中断按目录 rename 记录回滚，不盲目继续覆盖。
 - 已存在的 `previous` 表示旧目录尚未移回；回滚把新存档移入 `failed` 后将旧目录移回。各步可通过实际目录存在情况重入。
 

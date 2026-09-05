@@ -9,12 +9,14 @@ authors = [
 requires-python = ">=3.13"
 dependencies = [
     "mcrcon==0.7.0",
-    "fastmcp>=3.0,<4",
+    "fastmcp>=3.4.7,<4",
     "httpx>=0.28,<1",
     "PyJWT>=2.10,<3",
     "filelock>=3.16,<4",
     "docker>=7.1,<8",
     "uvicorn>=0.35,<1",
+    "pydantic>=2.11,<3",
+    "starlette>=1,<2",
 ]
 
 [project.scripts]
@@ -27,6 +29,8 @@ dev = ["pytest>=8,<10", "pytest-asyncio>=1,<2", "ruff>=0.12,<1"]
 [tool.pytest.ini_options]
 asyncio_mode = "auto"
 testpaths = ["tests"]
+addopts = "-m 'not blackbox'"
+markers = ["blackbox: independent-process HTTP, RCON and restore acceptance tests"]
 
 [tool.ruff]
 target-version = "py313"

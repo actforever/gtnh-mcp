@@ -197,6 +197,11 @@ class RestoreManager:
             unfinished = [
                 job for job in jobs if job["phase"] not in TERMINAL | {"pending"}
             ]
+            blocked = [job for job in jobs if job["phase"] == "manual_intervention"]
+            if blocked:
+                # Recreate the gate even if the runtime volume was lost.
+                atomic_json(self.marker, {"job": blocked[0]["id"]})
+                return
             if len(unfinished) > 1:
                 raise OperationError("存在多个未完成恢复，需人工检查")
             for job in unfinished:
