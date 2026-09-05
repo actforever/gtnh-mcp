@@ -1,0 +1,39 @@
+[project]
+name = "gtnh-mcp"
+version = "0.1.0"
+description = "Authenticated GTNH RCON tools and backup restoration for AstrBot"
+readme = "README.md"
+authors = [
+    { name = "qqa", email = "pineclone@outlook.com" }
+]
+requires-python = ">=3.13"
+dependencies = [
+    "mcrcon==0.7.0",
+    "fastmcp>=3.0,<4",
+    "httpx>=0.28,<1",
+    "PyJWT>=2.10,<3",
+    "filelock>=3.16,<4",
+    "docker>=7.1,<8",
+    "uvicorn>=0.35,<1",
+]
+
+[project.scripts]
+gtnh-mcp = "gtnh_mcp:main"
+gtnh-restore = "gtnh_mcp.helper:main"
+
+[dependency-groups]
+dev = ["pytest>=8,<10", "pytest-asyncio>=1,<2", "ruff>=0.12,<1"]
+
+[tool.pytest.ini_options]
+asyncio_mode = "auto"
+testpaths = ["tests"]
+
+[tool.ruff]
+target-version = "py313"
+
+[tool.ruff.lint]
+select = ["E4", "E7", "E9", "F", "I"]
+
+[build-system]
+requires = ["uv_build>=0.12.10,<0.13.0"]
+build-backend = "uv_build"
