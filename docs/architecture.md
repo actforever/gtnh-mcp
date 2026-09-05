@@ -19,12 +19,14 @@ flowchart LR
 | `auth` | 60 秒 HS256 身份验证、群白名单、管理员检查 |
 | `rcon` | mcrcon 0.7.0 的线程适配、命令参数校验、跨进程操作锁 |
 | `server` | FastMCP 工具、每次调用鉴权、私有恢复服务客户端 |
-| `backups` | 备份 ID 枚举、SHA-256、归档结构与容量校验、暂存 |
+| `backups` | ZIP/tar.gz 枚举、SHA-256、ZIP CRC、归档结构与容量校验、流式暂存 |
 | `container` | 固定 Docker 容器的优雅停服、启动、重启策略与 RCON 就绪检查 |
 | `restore` | 持久化确认和任务、单线程恢复执行、目录切换、回滚与中断恢复 |
 | `helper` | 私有 Unix socket API、单实例锁、启动恢复及健康检查 |
 
 MCP 服务非 root 运行，不能访问 Docker socket 或存档。恢复服务以 root 运行，只通过固定接口操作配置中的容器和路径，但 Docker socket 本身仍具有高权限。
+
+两个服务使用相同镜像的不同入口，并非两个独立项目。插件的职责是传递可验证的群成员身份与处理人工确认；恢复服务的职责是隔离 Docker 与文件写权限，不负责生成定时备份。完整 QQ/NapCat 链路见 [README](../README.md)。GTNH 通过单次 `exec java` 启动，由 Docker 接管自动重启，恢复服务才能临时关闭重启策略并等待 RCON stop 后容器退出。
 
 ## 并发与持久化
 

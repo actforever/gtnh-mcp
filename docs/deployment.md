@@ -34,14 +34,29 @@ docker inspect <GTNH容器名> --format '{{json .Mounts}}'
 找到宿主机上直接包含以下目录的游戏根目录：
 
 ```text
-/volume1/docker/gtnh/server/
-├── Worlds/
+/volume2/sharev9/minecraft/gtnh/
+├── World/
 ├── visualprospecting/
-└── backup/
-    └── example.tar.gz
+└── backups/
+    └── 2026-09-06-01-19-40.zip
 ```
 
-`Worlds` 和 `visualprospecting` 必须大小写一致，且不能分别挂载到其他文件系统。
+`World`（由 `WORLD_DIRECTORY` 配置）和 `visualprospecting` 必须大小写一致，且不能分别挂载到其他文件系统。ZIP 内直接包含这两个目录；也兼容相同结构的 tar.gz。
+
+### 调整 GTNH 启动脚本
+
+已查看的 NAS 启动脚本 `startserver-java9.sh` 使用 `while true`，Java 退出后等待 12 秒重启。恢复服务需要 RCON stop 后整个容器退出；仅关闭 Docker 重启策略无法关闭脚本内部循环。
+
+在安排好的停服窗口，先保存游戏并通过现有管理方式停止 GTNH，再备份原 Compose 和启动脚本。将本项目的 `examples/gtnh/startserver-managed.sh` 复制到 `/volume2/sharev9/minecraft/gtnh/startserver-managed.sh`（保持 LF 换行）。该脚本保留当前 Java 21 启动参数、8 GiB 堆和 `java9args.txt`，改为单次 `exec java`。
+
+修改 **GTNH 自己的 Compose**：工作目录保持 `/gtnh`，挂载保持服务端根目录，移除原 `command`，将入口和重启策略设置为：
+
+```yaml
+entrypoint: ["/bin/sh", "/gtnh/startserver-managed.sh"]
+restart: unless-stopped
+```
+
+完整示例见 [GTNH Compose](../examples/gtnh/compose.yaml)，使用已部署的 `openjdk:21` 镜像；合并时保留自己其他需要的设置，不要用它覆盖 MCP 的 Compose。在 GTNH 的 Compose 所在目录执行 `docker compose up -d gtnh`，检查启动日志及游戏连接。正常故障后的重启交由 Docker，恢复期间程序会临时关闭此策略并在结束时还原。这里提供操作步骤，本次开发没有修改 NAS 文件或重启真实容器。
 
 ## 2. 启用 GTNH RCON
 
@@ -88,9 +103,10 @@ RCON_TIMEOUT=10
 MCP_PORT=8000
 ALLOWED_GROUPS='["aiocqhttp:你的QQ群号"]'
 ADMIN_USERS='["aiocqhttp:你的QQ号"]'
-GTNH_CONTAINER_NAME=通过docker-ps查到的真实容器名
-GTNH_SERVER_ROOT=/volume1/docker/gtnh/server
-GTNH_BACKUP_DIR=/volume1/docker/gtnh/server/backup
+GTNH_CONTAINER_NAME=gtnh
+GTNH_SERVER_ROOT=/volume2/sharev9/minecraft/gtnh
+GTNH_BACKUP_DIR=/volume2/sharev9/minecraft/gtnh/backups
+WORLD_DIRECTORY=World
 STOP_TIMEOUT=180
 STARTUP_TIMEOUT=900
 MAX_ARCHIVE_BYTES=107374182400
@@ -176,12 +192,15 @@ runtime/
 ```sh
 mkdir -p runtime/astrbot-data/plugins/astrbot_plugin_gtnh
 cp -R astrbot_plugin/. runtime/astrbot-data/plugins/astrbot_plugin_gtnh/
+docker compose -f compose.chat.yaml up -d --force-recreate astrbot
 docker compose -f compose.chat.yaml exec astrbot \
   python -m pip install -r /AstrBot/data/plugins/astrbot_plugin_gtnh/requirements.txt
-docker compose -f compose.chat.yaml up -d --force-recreate astrbot
+docker compose -f compose.chat.yaml restart astrbot
 ```
 
 `--force-recreate` 会把 `.env` 中的 `AUTH_SECRET` 作为 `GTNH_AUTH_SECRET` 注入 AstrBot；只执行 restart 不会更新环境变量。
+
+顺序必须是先重建容器、再安装依赖、最后普通 restart。pip 安装的依赖位于容器可写层，重建会丢失；以后每次重新创建 AstrBot 容器都应重新执行安装和 restart。插件文件本身位于持久化目录，不会因重建丢失。
 
 进入 AstrBot 插件管理，确认 `astrbot_plugin_gtnh` 已加载。插件设置填写：
 
@@ -240,6 +259,9 @@ docker compose build
 docker compose up -d
 cp -R astrbot_plugin/. runtime/astrbot-data/plugins/astrbot_plugin_gtnh/
 docker compose -f compose.chat.yaml up -d --force-recreate astrbot
+docker compose -f compose.chat.yaml exec astrbot \
+  python -m pip install -r /AstrBot/data/plugins/astrbot_plugin_gtnh/requirements.txt
+docker compose -f compose.chat.yaml restart astrbot
 ```
 
 查看状态和日志：
@@ -264,7 +286,7 @@ docker compose -f compose.chat.yaml logs --tail=100 astrbot napcat
 | 群未授权 | 用 `/gtnh_identity` 核对平台和群 ID；检查 JSON 数组格式 |
 | QQ 消息进不了 AstrBot | NapCat 登录状态、反向 WS URL、6199 和两边 token |
 | 模型不调用工具 | 模型工具调用能力、内置 Agent 与 `gtnh_*` 工具是否启用 |
-| 备份列表为空 | 宿主机备份路径；文件是否为顶层普通 `.tar.gz` |
+| 备份列表为空 | 宿主机备份路径；文件是否为顶层普通 `.zip` 或 `.tar.gz` |
 | 恢复申请失败 | 容器名、目录结构、磁盘空间、归档结构和 Docker socket 权限 |
 | 一直处于维护状态 | 查询是否为 `manual_intervention`，按恢复文档处理 |
 | WebUI 无法访问 | host 网络端口 6099/6185 是否监听；NAS 防火墙设置 |

@@ -1,0 +1,14 @@
+# Example for the existing GTNH server; separate from the MCP compose.yaml.
+# Keep any additional settings required by your current server.
+services:
+  gtnh:
+    image: openjdk:21
+    container_name: gtnh
+    working_dir: /gtnh
+    entrypoint: ["/bin/sh", "/gtnh/startserver-managed.sh"]
+    restart: unless-stopped
+    ports:
+      - "25565:25565"
+      - "127.0.0.1:25575:25575"
+    volumes:
+      - /volume2/sharev9/minecraft/gtnh:/gtnh
