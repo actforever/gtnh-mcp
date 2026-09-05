@@ -4,6 +4,7 @@
 
 - Python 3.13 / uv. `src/gtnh_mcp` contains configuration, signed identity validation, RCON, MCP tools, archive validation, Docker control and the persistent restore worker.
 - `astrbot_plugin` is the separately installed AstrBot bridge. Sign actual message identities; never accept identity or role from model arguments. Confirmation is a command, not an LLM tool.
+- Its signing secret comes from AstrBot's `GTNH_AUTH_SECRET`; plugin settings only contain the MCP URL. Do not register the service a second time through AstrBot native MCP configuration.
 - MCP and AstrBot use Linux Docker host networking. Only the restore helper mounts the Docker socket and server directories; MCP calls it through a Unix socket.
 - Details belong in `docs/architecture.md`, `docs/security.md`, `docs/restore.md`, and `docs/deployment.md`.
 

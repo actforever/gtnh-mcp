@@ -1,0 +1,7 @@
+{
+  "mcp_url": {
+    "description": "GTNH MCP Streamable HTTP 地址",
+    "type": "string",
+    "default": "http://127.0.0.1:8000/mcp"
+  }
+}

@@ -1,0 +1,6 @@
+name: astrbot_plugin_gtnh
+display_name: GTNH 运维
+desc: 基于真实群消息身份调用 GTNH MCP，恢复须由管理员明确确认。
+version: v0.1.0
+author: qqa
+astrbot_version: ">=4.16,<5"
