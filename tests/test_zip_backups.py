@@ -119,6 +119,8 @@ def test_invalid_world_directory(name):
 
 def test_default_world_directory():
     assert Settings.model_fields["world_directory"].default == "World"
+    assert "allowed_groups" not in Settings.model_fields
+    assert "admin_users" not in Settings.model_fields
 
 
 def test_encrypted_zip_rejected(zip_settings):

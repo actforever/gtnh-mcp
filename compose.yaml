@@ -2,6 +2,8 @@ services:
   mcp:
     build: .
     image: gtnh-mcp:local
+    # Rebuild the installed package from this checkout before each `up`.
+    pull_policy: build
     network_mode: host
     restart: unless-stopped
     env_file: .env
@@ -23,6 +25,7 @@ services:
   restore:
     build: .
     image: gtnh-mcp:local
+    pull_policy: build
     command: [gtnh-restore]
     user: "0:10001"
     group_add:

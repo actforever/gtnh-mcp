@@ -2,7 +2,7 @@
 
 ## 配置如何生效
 
-复制 `.env.example` 为 `.env`。Compose 用它替换挂载、GID 等 `${变量}`，两个服务还通过 `env_file: .env` 取得程序环境变量。Python 本身不自动加载 dotenv；直接使用 uv 启动时需在进程环境设置变量。修改后执行 `docker compose up -d --force-recreate`，普通 restart 不会更新环境。
+复制 `.env.example` 为 `.env`。Compose 用它替换挂载、GID 等 `${变量}`，两个服务还通过 `env_file: .env` 取得程序环境变量。Python 本身不自动加载 dotenv；直接使用 uv 启动时需在进程环境设置变量。修改后执行 `docker compose up -d --force-recreate`，普通 restart 不会更新环境。主 Compose 的 `pull_policy: build` 会在 `up` 时从当前源码重建共用镜像，避免继续运行本地同名旧镜像；不必再单独执行 `docker compose build`。
 
 密码含空格、#、$ 时使用 dotenv 单引号，例如 `RCON_PASSWORD='p@ss word#2026$'`。不要提交真实 .env。QQ ACL 仅配置在 AstrBot 插件或 AstrBot 原有环境中，不属于后端 .env。
 

@@ -134,8 +134,7 @@ docker compose config --quiet
 ## 4. 构建 MCP 与恢复服务
 
 ```sh
-docker compose build
-docker compose up -d
+docker compose up -d --force-recreate
 docker compose ps
 docker compose logs --tail=100 restore mcp
 curl --fail http://127.0.0.1:8000/health
@@ -311,8 +310,7 @@ docker compose up -d --force-recreate
 
 ```sh
 git pull
-docker compose build
-docker compose up -d
+docker compose up -d --force-recreate
 ```
 
 仅使用本项目可选 AstrBot 模板的实例继续执行：
