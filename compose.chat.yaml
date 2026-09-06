@@ -1,4 +1,5 @@
-# 可选：从零部署 AstrBot + NapCat。适用于 Linux NAS 的 host 网络。
+# Optional AstrBot-only template for new installations on Linux NAS.
+# Reuse an existing AstrBot instance and its data instead of creating another.
 name: gtnh-chat
 
 services:
@@ -12,18 +13,3 @@ services:
       GTNH_AUTH_SECRET: ${AUTH_SECRET:?Set AUTH_SECRET in .env}
     volumes:
       - ./runtime/astrbot-data:/AstrBot/data
-
-  napcat:
-    image: mlikiowa/napcat-docker:latest
-    container_name: napcat
-    network_mode: host
-    restart: unless-stopped
-    environment:
-      TZ: Asia/Shanghai
-      MODE: astrbot
-      NAPCAT_UID: ${NAPCAT_UID:-1000}
-      NAPCAT_GID: ${NAPCAT_GID:-1000}
-    volumes:
-      - ./runtime/astrbot-data:/AstrBot/data
-      - ./runtime/napcat-config:/app/napcat/config
-      - ./runtime/napcat-qq:/app/.config/QQ

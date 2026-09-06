@@ -14,8 +14,8 @@
 
 ```dotenv
 RCON_PASSWORD='p@ss word#2026$'
-ALLOWED_GROUPS='["aiocqhttp:123456789","aiocqhttp:987654321"]'
-ADMIN_USERS='["aiocqhttp:1122334455"]'
+ALLOWED_GROUPS='["qq_official:REPLACE_WITH_GROUP_ID"]'
+ADMIN_USERS='["qq_official:REPLACE_WITH_USER_ID"]'
 ```
 
 不要在等号两边加空格，也不要提交真实 `.env`。
@@ -24,9 +24,9 @@ ADMIN_USERS='["aiocqhttp:1122334455"]'
 
 ### `AUTH_SECRET`
 
-AstrBot 配套插件用它签发短期身份凭据，MCP 和恢复服务用同一值验签。必填，至少 32 字符，建议执行 `openssl rand -hex 32` 生成。AstrBot 容器内变量名是 `GTNH_AUTH_SECRET`，`compose.chat.yaml` 会从同一个 `.env` 映射；两者必须完全一致。
+AstrBot 配套插件用它签发短期身份凭据，MCP 和恢复服务用同一值验签。必填，至少 32 字符，建议执行 `openssl rand -hex 32` 生成。AstrBot 容器内变量名是 `GTNH_AUTH_SECRET`；已有实例须在原部署配置中注入同值，本项目可选 `compose.chat.yaml` 会从同一个 `.env` 映射。另一个 Compose 项目不会自动读取本项目 `.env`。
 
-它不是 RCON 密码、AstrBot 管理密码、NapCat WebUI 密码、OneBot token 或模型 API Key。泄露后应生成新值，并重新创建 MCP、恢复服务和 AstrBot 容器。
+它不是 RCON 密码、AstrBot 管理密码、QQ 官方机器人 AppSecret 或模型 API Key。泄露后应生成新值，并在各自原部署配置中更新、重新创建 MCP、恢复服务和 AstrBot 容器。
 
 ### `RCON_HOST`
 
@@ -48,13 +48,15 @@ RCON 建连和单次响应读取的超时秒数，默认 10，范围 1–120。�
 
 FastMCP Streamable HTTP 的监听端口，默认 8000。MCP 固定监听 `127.0.0.1`，地址是 `http://127.0.0.1:8000/mcp`。修改后必须同步修改 AstrBot 插件的 `mcp_url`。
 
+此地址适用于同一 NAS 上采用 host 网络或宿主机进程方式运行的 AstrBot；bridge 容器内的回环地址指向自身。现有实例的网络检查与调整见 [部署教程](deployment.md#5-复用现有-astrbot首次部署可选)。
+
 ### `ALLOWED_GROUPS`
 
-允许调用工具的群列表，必填 JSON 数组。元素格式为 `平台名:群ID`；QQ + NapCat 通常为 `aiocqhttp:QQ群号`。管理员也必须从允许的群发起操作。插件安装后在目标群发送 `/gtnh_identity`，以实际返回的 `platform` 和 `group` 核对。私聊没有群 ID，会被拒绝。
+允许调用工具的群列表，必填 JSON 数组。元素格式为 `平台名:群ID`。QQ 官方机器人示例为 `qq_official:REPLACE_WITH_GROUP_ID`，必须用目标群 `/gtnh_identity` 返回的 `platform` 和 `group` 替换；官方群标识不是普通 QQ 群号。管理员也必须从允许的群发起操作。私聊没有群 ID，会被拒绝。
 
 ### `ADMIN_USERS`
 
-拥有白名单管理和备份恢复权限的用户列表，JSON 数组。元素格式为 `平台名:用户ID`；QQ + NapCat 通常为 `aiocqhttp:QQ号`。空数组 `[]` 表示无人有管理权限。这里的权限独立于 QQ 群主、QQ 群管理员和 AstrBot 管理员，必须显式配置。
+拥有白名单管理、备份恢复及撤销权限的用户列表，JSON 数组。元素格式为 `平台名:用户ID`；使用 `/gtnh_identity` 返回的 `platform` 和 `user`，不要直接填写普通 QQ 号，也不要猜测开放平台标识。身份按完整字符串匹配，不转换为数字或统一大小写。空数组 `[]` 表示无人有管理权限。这里的权限独立于 QQ 群主、QQ 群管理员和 AstrBot 管理员，必须显式配置。
 
 ## GTNH 容器与目录配置
 
@@ -102,20 +104,15 @@ NAS 上存放现有 `*.zip` 或 `*.tar.gz` 的目录，模板为 `/volume2/share
 
 磁盘满足本次备份暂存空间后还必须保留的可用空间，单位字节，默认 `1073741824`（1 GiB）。恢复会长期保留旧存档，应持续监控磁盘空间。
 
-## AstrBot、NapCat 与内部配置
+## AstrBot 与内部配置
 
-### `NAPCAT_UID` / `NAPCAT_GID`
-
-NapCat 写入持久化目录时使用的宿主机用户和组 ID。SSH 登录 NAS 后运行 `id -u` 和 `id -g` 获取；常见值为 1000/1000，但应以实际输出为准。它们只供 `compose.chat.yaml` 使用。
-
-`compose.chat.yaml` 使用独立项目名 `gtnh-chat`，并固定使用 AstrBot WebUI 端口 6185、NapCat WebUI 端口 6099、OneBot 反向 WebSocket 端口 6199 和时区 `Asia/Shanghai`。两者使用 host 网络，端口直接由 NAS 占用，无需 `ports` 映射。
+`compose.chat.yaml` 是仅含 AstrBot 的可选首次部署模板，使用独立项目名 `gtnh-chat`、host 网络和时区 `Asia/Shanghai`，AstrBot WebUI 默认端口为 6185，无需 `ports` 映射。已有 AstrBot 应沿用原项目、数据和机器人配置，仅安装 GTNH 插件、注入密钥并检查网络。
 
 `compose.yaml` 固定以下容器内值：`MCP_HOST=127.0.0.1`、`RUNTIME_DIR=/run/gtnh`、`SERVER_ROOT=/server`、`BACKUP_DIR=/backups`、`STATE_DIR=/state`、`CONTAINER_NAME=${GTNH_CONTAINER_NAME}`。宿主机路径由 volume 映射到内部路径，不要把宿主机路径直接写成容器路径。
 
 - `runtime` 命名卷保存 Unix socket、跨进程锁和维护标记，由 MCP 与恢复服务共享。
 - `restore-state` 命名卷保存恢复任务日志，用于服务重启后的恢复判断。
-- `runtime/astrbot-data` 保存 AstrBot 配置和插件。
-- `runtime/napcat-config` 与 `runtime/napcat-qq` 保存 NapCat 配置和 QQ 登录状态。
+- `runtime/astrbot-data` 是可选 AstrBot 模板的数据目录；已有实例沿用原数据挂载。
 
 不要执行 `docker compose down -v`，否则会删除恢复状态卷。恢复进行中也不应停止或重建服务。
 
@@ -123,10 +120,9 @@ NapCat 写入持久化目录时使用的宿主机用户和组 ID。SSH 登录 NA
 
 | 凭据 | 用途 | 填写位置 |
 | --- | --- | --- |
-| `AUTH_SECRET` / `GTNH_AUTH_SECRET` | 签发和验证群成员身份 | 项目 `.env`，由两个 Compose 模板注入 |
+| `AUTH_SECRET` / `GTNH_AUTH_SECRET` | 签发和验证群成员身份 | MCP 项目 `.env`；现有 AstrBot 原部署环境，或可选模板映射 |
 | RCON 密码 | 服务连接 GTNH | GTNH `server.properties` 与项目 `.env` |
-| NapCat WebUI 密码 | 登录 NapCat 管理页面 | NapCat 首次启动日志/WebUI |
-| OneBot token | NapCat 与 AstrBot 的反向 WebSocket 认证 | 两边 WebUI 填写同值 |
+| QQ AppID / AppSecret | AstrBot 连接 QQ 官方机器人 API | AstrBot 的 QQ 官方机器人平台配置 |
 | 模型 API Key | AstrBot 调用大语言模型 | AstrBot WebUI 的模型提供商设置 |
 
 这些凭据用途不同，不要复用，也不要发到群聊或写入 Git。

@@ -12,8 +12,7 @@
 
 ```mermaid
 flowchart TD
-    QQ[QQ 群友] <-->|群消息| NapCat[NapCat / OneBot]
-    NapCat <-->|反向 WebSocket| AstrBot[AstrBot + GTNH 插件]
+    QQ[QQ 群友] <-->|QQ 官方机器人 API| AstrBot[现有 AstrBot：内置 QQ 接入 + GTNH 插件]
     AstrBot <-->|签名身份 / Streamable HTTP| MCP[MCP 服务：工具与权限检查]
     MCP <-->|RCON：查询、公告、保存、白名单| GTNH[GTNH 容器]
     MCP <-->|私有 Unix socket| Restore[恢复服务：备份校验与回档]
@@ -27,6 +26,8 @@ flowchart TD
 
 插件从真实群消息取得用户和群身份并签名，MCP 按配置检查群和管理员权限；身份不由模型填写。回档须由原申请人在原群发送 `/gtnh_confirm <任务编号>` 确认，不能让模型代为确认。因此本部署使用配套插件，不再在 AstrBot 原生 MCP 页面重复添加服务。
 
+聊天侧复用已有 AstrBot 的内置 QQ 官方机器人接入，GTNH 插件安装在该实例内。`compose.chat.yaml` 仅供尚未部署 AstrBot 的用户选择使用，不需要另外启动一个 AstrBot。群和管理员权限按 `/gtnh_identity` 返回的平台与身份填写，不能直接套用普通 QQ 群号、QQ 号。
+
 双服务使用同一项目镜像、不同入口。MCP 以非 root 用户运行，不挂载游戏目录或 Docker socket；恢复服务处理文件与容器操作，不开放 TCP 端口。两者共享操作锁和维护标记，回档期间暂停普通 RCON 工具。任务日志持久化在状态卷中，旧世界保存在服务端 `.gtnh-restore/<任务编号>/previous/`。运行时不依赖 SSH。
 
 NAS 已只读确认 `/volume2/sharev9/minecraft/gtnh` 下为 `World`、`visualprospecting` 和 `backups`；抽查的日期命名 ZIP 索引包含这两个顶层目录，使用 Deflate。程序不依赖日期命名规则，也不会把 `World` 改成 `Worlds`。索引检查不等于完整备份校验或实际恢复验收；`server.properties` 因 SSH 读取权限不足未核实，RCON 仍需部署时确认。
@@ -35,7 +36,7 @@ NAS 已只读确认 `/volume2/sharev9/minecraft/gtnh` 下为 `World`、`visualpr
 
 ## 部署与开发
 
-- [NAS 完整部署：GTNH + MCP + AstrBot + NapCat](docs/deployment.md)
+- [NAS 完整部署：GTNH + MCP + 现有 AstrBot 官方 QQ 接入](docs/deployment.md)
 - [全部环境变量与配置参考](docs/configuration.md)
 - [架构与模块](docs/architecture.md)
 - [身份与工具权限](docs/security.md)

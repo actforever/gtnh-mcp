@@ -2,7 +2,7 @@
 
 ```mermaid
 flowchart LR
-    Group[群消息] --> Plugin[AstrBot 配套插件]
+    Group[QQ 官方机器人群消息] --> Plugin[现有 AstrBot 内置接入 + GTNH 插件]
     Plugin -->|签名身份 / Streamable HTTP| MCP[FastMCP]
     MCP -->|RCON| GTNH[GTNH]
     MCP -->|Unix socket / 原始身份凭据| Helper[独立恢复服务]
@@ -27,7 +27,7 @@ flowchart LR
 
 MCP 服务非 root 运行，不能访问 Docker socket 或存档。恢复服务以 root 运行，只通过固定接口操作配置中的容器和路径，但 Docker socket 本身仍具有高权限。
 
-两个服务使用相同镜像的不同入口，并非两个独立项目。插件的职责是传递可验证的群成员身份与处理人工确认；恢复服务的职责是隔离 Docker 与文件写权限，不负责生成定时备份。完整 QQ/NapCat 链路见 [README](../README.md)。GTNH 通过单次 `exec java` 启动，由 Docker 接管自动重启，恢复服务才能临时关闭重启策略并等待 RCON stop 后容器退出。
+两个服务使用相同镜像的不同入口，并非两个独立项目。插件安装在已有 AstrBot 内，使用其统一消息接口传递可验证的群成员身份与处理人工确认；QQ 官方接入由 AstrBot 内置适配器完成。恢复服务隔离 Docker 与文件写权限，不负责生成定时备份。完整链路见 [README](../README.md)。GTNH 通过单次 `exec java` 启动，由 Docker 接管自动重启，恢复服务才能临时关闭重启策略并等待 RCON stop 后容器退出。
 
 ## 并发与持久化
 

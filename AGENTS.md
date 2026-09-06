@@ -10,7 +10,7 @@
 - Its signing secret comes from AstrBot's `GTNH_AUTH_SECRET`; plugin settings only contain the MCP URL. Do not register the service a second time through AstrBot native MCP configuration.
 - MCP and AstrBot use Linux Docker host networking. Only the restore helper mounts the Docker socket and server directories; MCP calls it through a Unix socket.
 - Details belong in `docs/architecture.md`, `docs/security.md`, `docs/restore.md`, `docs/configuration.md`, `docs/deployment.md`, and `docs/testing.md`.
-- `compose.chat.yaml` is the optional Linux host-network AstrBot + NapCat deployment. Keep every `.env.example` variable documented in `docs/configuration.md` and the end-to-end NAS procedure in `docs/deployment.md`.
+- Reuse the user's existing AstrBot with its built-in QQ Official adapter. `compose.chat.yaml` is an optional AstrBot-only Linux host-network template for new installations; do not introduce a separate QQ gateway. Use actual `/gtnh_identity` output for platform/group/user ACLs, never assume numeric QQ identifiers. Keep every `.env.example` variable documented in `docs/configuration.md` and the end-to-end NAS procedure in `docs/deployment.md`.
 
 ## Development
 

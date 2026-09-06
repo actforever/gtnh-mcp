@@ -1,9 +1,9 @@
-# NAS 完整部署教程：GTNH + MCP + AstrBot + NapCat
+# NAS 完整部署教程：GTNH + MCP + AstrBot 官方 QQ 接入
 
-本文从一台已有 GTNH Docker 服务的 Linux NAS 开始，最终让 QQ 群成员通过 AstrBot 调用 GTNH 工具。示例路径使用 `/volume1/docker`，请替换成 NAS 的实际路径。命令均在 NAS SSH 终端执行。
+本文以 NAS 上已有 GTNH 和已接入 QQ 官方机器人的 AstrBot 为主线：在现有 AstrBot 内安装 GTNH 插件，再接入 MCP。已有机器人凭据、模型配置及数据继续沿用，不需要另建 AstrBot 实例。示例路径使用 `/volume1/docker`，请替换成 NAS 的实际路径。命令均在 NAS SSH 终端执行。
 
 ```text
-QQ 群 <-> NapCat <-> OneBot 反向 WebSocket <-> AstrBot 配套插件
+QQ 群 <-> QQ 官方机器人 API <-> 现有 AstrBot + GTNH 插件
                                                    |
                                       Streamable HTTP /mcp
                                                    |
@@ -20,9 +20,9 @@ QQ 群 <-> NapCat <-> OneBot 反向 WebSocket <-> AstrBot 配套插件
 
 - Linux NAS、Docker 和 Docker Compose v2；`docker compose version` 能正常执行。
 - 已运行的 GTNH 容器、游戏根目录、RCON 端口和密码。
-- 一个已经加入目标群的机器人 QQ 号。
+- 已在目标群可用的 AstrBot QQ 官方机器人接入。
 - 支持工具调用的模型服务及 API Key。
-- 未占用的端口：8000（MCP）、6185（AstrBot WebUI）、6099（NapCat WebUI）、6199（OneBot 反向 WebSocket）。
+- 未占用的 MCP 端口 8000；已有 AstrBot 沿用其管理端口，首次部署示例使用 6185。
 
 查询 GTNH 的真实容器名和挂载：
 
@@ -107,8 +107,8 @@ RCON_PORT=25575
 RCON_PASSWORD='与server.properties一致的RCON密码'
 RCON_TIMEOUT=10
 MCP_PORT=8000
-ALLOWED_GROUPS='["aiocqhttp:你的QQ群号"]'
-ADMIN_USERS='["aiocqhttp:你的QQ号"]'
+ALLOWED_GROUPS='["qq_official:REPLACE_WITH_GROUP_ID"]'
+ADMIN_USERS='["qq_official:REPLACE_WITH_USER_ID"]'
 GTNH_CONTAINER_NAME=gtnh
 GTNH_SERVER_ROOT=/volume2/sharev9/minecraft/gtnh
 GTNH_BACKUP_DIR=/volume2/sharev9/minecraft/gtnh/backups
@@ -118,15 +118,12 @@ STARTUP_TIMEOUT=900
 MAX_ARCHIVE_BYTES=107374182400
 MAX_ARCHIVE_MEMBERS=1000000
 FREE_SPACE_RESERVE=1073741824
-NAPCAT_UID=1000
-NAPCAT_GID=1000
 ```
 
-运行 `id -u` 和 `id -g`，用实际输出替换最后两项。全部变量的用途、单位及相互关系见 [配置参考](configuration.md)。检查两个 Compose 文件；渲染结果包含密码，不要公开粘贴：
+身份占位值在第 9 步用实际输出替换；首次尚未取得身份时可以暂留占位值，真实群调用会被拒绝，`/gtnh_identity` 在插件本地执行，不依赖 MCP 授权。全部变量的用途、单位及相互关系见 [配置参考](configuration.md)。检查 MCP Compose；渲染结果包含密码，不要公开粘贴：
 
 ```sh
 docker compose config --quiet
-docker compose -f compose.chat.yaml config --quiet
 ```
 
 ## 4. 构建 MCP 与恢复服务
@@ -143,47 +140,37 @@ curl --fail http://127.0.0.1:8000/health
 
 `mcp` 以非 root 用户提供 HTTP 工具并访问 RCON；`restore` 挂载 Docker socket 与游戏目录，负责受控恢复。恢复服务没有 TCP 端口，只接受共享 Unix socket 请求。GTNH 不是本项目 Compose 的一部分，恢复服务只操作 `.env` 指定的现有容器。
 
-## 5. 从零启动 AstrBot 与 NapCat
+## 5. 复用现有 AstrBot（首次部署可选）
 
-`compose.chat.yaml` 使用独立 Compose 项目名 `gtnh-chat` 和 Linux host 网络，因此不会与 MCP 栈的服务名混淆；AstrBot 能通过 `127.0.0.1:8000` 访问 MCP，NapCat 能通过 `127.0.0.1:6199` 连接 AstrBot。
+已有 AstrBot 时跳过本节的启动命令，保留它原有的 Compose/NAS 项目和数据挂载。记录实际容器名、Compose service 名以及 `/AstrBot/data` 对应的宿主机目录，第 8 步会用到。可通过 `docker inspect <现有AstrBot容器名> --format '{{json .Mounts}}'` 查看挂载，不要把旧数据改成空的新目录。
+
+本项目 MCP 仅监听 NAS 的 `127.0.0.1`。同一 NAS 上的 AstrBot 以 host 网络或直接宿主机进程运行时才能用此地址；bridge 容器内的 `127.0.0.1` 指向该容器自己。若现有 AstrBot 使用 bridge 网络，需在其原部署配置中安排切换到 `network_mode: host`，移除该服务的 `ports` 映射，核对实际监听端口是否冲突，保留原数据卷、机器人及模型设置后重建。不要仅把 MCP 地址改成 NAS IP；当前 MCP 不监听该地址。其他主机部署需要另行配置受控网络入口，不在本教程默认方案内。
+
+**只有尚未部署 AstrBot 时**，才在本项目根目录使用 AstrBot-only 模板：
 
 ```sh
+docker compose -f compose.chat.yaml config --quiet
 docker compose -f compose.chat.yaml pull
 docker compose -f compose.chat.yaml up -d
 docker compose -f compose.chat.yaml ps
-docker compose -f compose.chat.yaml logs --tail=100 astrbot napcat
+docker compose -f compose.chat.yaml logs --tail=100 astrbot
 ```
 
 持久化数据写入：
 
 ```text
-runtime/
-├── astrbot-data/
-├── napcat-config/
-└── napcat-qq/
+runtime/astrbot-data/
 ```
 
-从 `docker compose -f compose.chat.yaml logs astrbot` 查找初始用户名和随机密码。浏览器访问 `http://<NAS局域网IP>:6185`，登录后立即修改管理密码。管理端口 6185 和 6099 只应允许可信局域网或 VPN 访问。
+模板使用独立 Compose 项目名 `gtnh-chat` 和 host 网络。按 AstrBot 启动日志完成首次登录，浏览器访问 `http://<NAS局域网IP>:6185`，设置管理密码；管理端口只允许可信局域网或 VPN 访问。
 
-## 6. 登录 NapCat 并连接 QQ
+## 6. 确认 AstrBot 内置 QQ 官方接入
 
-运行 `docker compose -f compose.chat.yaml logs napcat` 获取 NapCat WebUI token，访问 `http://<NAS局域网IP>:6099/webui`，登录并修改密码。进入 QQ 登录页面，用机器人 QQ 扫码登录。
+已有官方 QQ 接入时，直接在目标群 @ 机器人发送 `/help`，确认 AstrBot 能收到消息并回复；保留原有平台和接入方式。
 
-在 AstrBot WebUI 的“消息平台/平台”中添加 OneBot v11（`aiocqhttp`）：
+首次配置时，在 AstrBot WebUI 的机器人/消息平台中创建“QQ 官方机器人（WebSocket）”，填写 QQ 开放平台的 AppID、AppSecret 并启用；支持一键创建的版本也可以按其扫码流程操作。根据开放平台当前要求完成群使用权限和测试/发布配置，再在目标群验证。详细步骤以 [AstrBot 官方 QQ 接入文档](https://docs.astrbot.app/platform/qqofficial/websockets.html) 为准。已有 Webhook 接入的用户继续沿用现有回调配置。
 
-- 启用：是。
-- 反向 WebSocket 地址：优先 `127.0.0.1`；若当前版本不接受则用 `0.0.0.0`，同时用 NAS 防火墙限制 6199。
-- 反向 WebSocket 端口：`6199`。
-- token：新生成一个只用于 OneBot 的随机值。
-
-在 NapCat WebUI 的网络配置中新建“WebSocket 客户端/反向 WebSocket”：
-
-- 启用：是。
-- URL：`ws://127.0.0.1:6199/ws`。
-- token：与 AstrBot 的 OneBot token 完全相同。
-- 消息格式：Array（数组）。
-
-保存后查看 AstrBot 日志。出现类似 `aiocqhttp(OneBot v11) adapter connected` 表示成功。反复断开时检查 6199、两边 token，以及 URL 是否包含 `/ws`。
+QQ AppID/AppSecret 只配置在 AstrBot 官方适配器中，与本项目的 `AUTH_SECRET` 无关，也不写入 MCP `.env`。
 
 ## 7. 配置 AstrBot 模型
 
@@ -193,7 +180,34 @@ runtime/
 
 ## 8. 安装配套插件
 
-在项目根目录执行：
+### 已有 AstrBot
+
+先在现有 AstrBot 的原 Compose/NAS 配置中加入环境变量 `GTNH_AUTH_SECRET`，值与本项目 `.env` 的 `AUTH_SECRET` 完全一致。若使用 Compose，可以在 **AstrBot 项目自己的** `.env` 保存同值，再合并以下片段，不覆盖其他配置：
+
+```yaml
+services:
+  astrbot: # 替换为原有 service 名
+    environment:
+      GTNH_AUTH_SECRET: ${GTNH_AUTH_SECRET:?Set GTNH_AUTH_SECRET}
+```
+
+修改本项目 `.env` 不会自动影响另一个 Compose 项目。以下是现有实例的具体安装流程；替换绝对路径及容器/service 名，挂载路径按第 5 步检查结果填写：
+
+```sh
+# 从本项目目录复制到现有 AstrBot 的持久化插件目录
+mkdir -p /实际AstrBot数据目录/plugins/astrbot_plugin_gtnh
+cp -R astrbot_plugin/. /实际AstrBot数据目录/plugins/astrbot_plugin_gtnh/
+# 使用原项目配置重建以注入环境变量，保留原数据挂载
+docker compose --env-file /实际AstrBot项目目录/.env -f /实际AstrBot项目目录/compose.yaml up -d --force-recreate <AstrBot服务名>
+docker exec <AstrBot容器名> python -m pip install -r /AstrBot/data/plugins/astrbot_plugin_gtnh/requirements.txt
+docker restart <AstrBot容器名>
+```
+
+由 NAS 容器界面管理的实例在原界面更新环境并重建，再执行上述依赖安装与 restart；直接运行在宿主机的实例将插件放到其实际数据目录，用原 Python 环境安装依赖，在原启动环境设置密钥后重启 AstrBot。
+
+### 使用本项目可选 AstrBot 模板
+
+仅第 5 步新建的实例，在本项目根目录执行：
 
 ```sh
 mkdir -p runtime/astrbot-data/plugins/astrbot_plugin_gtnh
@@ -221,10 +235,10 @@ mcp_url = http://127.0.0.1:8000/mcp
 由管理员账号在目标 QQ 群发送 `/gtnh_identity`，预期返回：
 
 ```text
-platform=aiocqhttp group=123456789 user=987654321
+platform=qq_official group=GROUP_OPENID_EXAMPLE user=USER_ID_EXAMPLE
 ```
 
-用实际 `platform:group` 更新 `ALLOWED_GROUPS`，用实际 `platform:user` 更新 `ADMIN_USERS`。修改后重新创建服务：
+群内若需 @ 触发，发送“@机器人 /gtnh_identity”。用实际 `platform:group` 更新 `ALLOWED_GROUPS`，用实际 `platform:user` 更新 `ADMIN_USERS`，保留大小写及完整字符串。上面的输出只是格式示例，不要照抄。QQ 官方群消息使用开放平台标识（群为 `group_openid`），不能直接填写普通群号、QQ 号；平台前缀也以实际输出为准。修改后在本项目目录重新创建服务：
 
 ```sh
 docker compose up -d --force-recreate
@@ -261,10 +275,17 @@ docker compose up -d --force-recreate
 
 ## 12. 更新和日常管理
 
+先更新 MCP 服务，再按第 8 步对应的部署方式更新现有插件及依赖。已有 AstrBot 继续使用原项目管理命令，不执行下面可选模板的聊天服务命令。
+
 ```sh
 git pull
 docker compose build
 docker compose up -d
+```
+
+仅使用本项目可选 AstrBot 模板的实例继续执行：
+
+```sh
 cp -R astrbot_plugin/. runtime/astrbot-data/plugins/astrbot_plugin_gtnh/
 docker compose -f compose.chat.yaml up -d --force-recreate astrbot
 docker compose -f compose.chat.yaml exec astrbot \
@@ -272,16 +293,16 @@ docker compose -f compose.chat.yaml exec astrbot \
 docker compose -f compose.chat.yaml restart astrbot
 ```
 
-查看状态和日志：
+查看状态和日志（`compose.chat.yaml` 两条仅适用于可选模板实例）：
 
 ```sh
 docker compose ps
 docker compose -f compose.chat.yaml ps
 docker compose logs --tail=100 mcp restore
-docker compose -f compose.chat.yaml logs --tail=100 astrbot napcat
+docker compose -f compose.chat.yaml logs --tail=100 astrbot
 ```
 
-停止聊天服务使用 `docker compose -f compose.chat.yaml down`，停止 MCP 使用 `docker compose down`。恢复任务执行中不要停止、更新或重建相关服务。不要使用 `docker compose down -v`，它会删除恢复状态卷。
+仅可选模板的聊天服务使用 `docker compose -f compose.chat.yaml down` 停止；已有 AstrBot 使用原项目命令。停止 MCP 使用 `docker compose down`。恢复任务执行中不要停止、更新或重建相关服务。不要使用 `docker compose down -v`，它会删除恢复状态卷。
 
 ## 常见故障
 
@@ -292,13 +313,14 @@ docker compose -f compose.chat.yaml logs --tail=100 astrbot napcat
 | 插件加载失败 | 插件目录和文件；requirements 是否安装；AstrBot 是否为兼容的 4.x |
 | 身份无效 | `GTNH_AUTH_SECRET` 是否与 `AUTH_SECRET` 一致；是否 force-recreate |
 | 群未授权 | 用 `/gtnh_identity` 核对平台和群 ID；检查 JSON 数组格式 |
-| QQ 消息进不了 AstrBot | NapCat 登录状态、反向 WS URL、6199 和两边 token |
+| QQ 消息进不了 AstrBot | 官方机器人是否启用、凭据与开放平台群权限、目标群是否需 @ 触发；检查原适配器日志 |
+| AstrBot 连不上健康的 MCP | 是否同一 NAS 且 AstrBot 使用 host 网络；bridge 容器的回环地址不能访问宿主机 MCP |
 | 模型不调用工具 | 模型工具调用能力、内置 Agent 与 `gtnh_*` 工具是否启用 |
 | 备份列表为空 | 宿主机备份路径；文件是否为顶层普通 `.zip` 或 `.tar.gz` |
 | 恢复申请失败 | 容器名、目录结构、磁盘空间、归档结构和 Docker socket 权限 |
 | 一直处于维护状态 | 查询是否为 `manual_intervention`，按恢复文档处理 |
-| WebUI 无法访问 | host 网络端口 6099/6185 是否监听；NAS 防火墙设置 |
+| WebUI 无法访问 | 原有 AstrBot 管理端口（模板默认 6185）是否监听；NAS 防火墙设置 |
 
-变量细节见 [配置参考](configuration.md)，状态和回滚见 [恢复文档](restore.md)，验证边界见 [测试说明](testing.md)。AstrBot 与 NapCat 界面字段会随版本调整，名称不一致时以当前官方文档为准。
+变量细节见 [配置参考](configuration.md)，状态和回滚见 [恢复文档](restore.md)，验证边界见 [测试说明](testing.md)。AstrBot 界面字段会随版本调整，名称不一致时以当前官方文档为准。
 
-参考资料：[AstrBot Docker 部署](https://docs.astrbot.app/deploy/astrbot/docker.html)、[AstrBot OneBot v11 接入](https://docs.astrbot.app/platform/aiocqhttp.html)、[NapCat Docker](https://github.com/NapNeko/NapCat-Docker)。
+参考资料：[AstrBot Docker 部署](https://docs.astrbot.app/deploy/astrbot/docker.html)、[AstrBot QQ 官方机器人](https://docs.astrbot.app/platform/qqofficial/websockets.html)、[官方适配器身份映射源码](https://github.com/AstrBotDevs/AstrBot/blob/master/astrbot/core/platform/sources/qqofficial/qqofficial_platform_adapter.py)。

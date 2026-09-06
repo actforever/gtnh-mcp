@@ -17,6 +17,8 @@
 
 AstrBot 插件直接从消息事件读取 `get_platform_name()`、`get_group_id()`、`get_sender_id()`。不读取消息里的身份声明，不接受 LLM 传入身份或角色。私聊拒绝调用。
 
+QQ 官方接入复用这些统一事件接口。部署时在目标群用 `/gtnh_identity` 获取实际平台、群和用户字符串，不把开放平台身份替换成普通 QQ 号/群号；管理员确认仍须匹配原申请的完整平台、群、用户。QQ AppSecret 只供 AstrBot 官方适配器使用，插件签名使用独立的 `GTNH_AUTH_SECRET`。
+
 插件用共享随机密钥签发 HS256 JWT：固定 issuer `astrbot-gtnh`、audience `gtnh-mcp`，`iat`/`exp` 最大间隔 60 秒；身份字段为 `platform`、`group`、`sub`。MCP 和恢复服务分别验证，不依赖会话缓存的旧角色。
 
 `ALLOWED_GROUPS` 为 `平台:群ID` JSON 数组；`ADMIN_USERS` 为 `平台:用户ID` JSON 数组。两项以服务端配置为准；管理员也必须来自允许的群。更改 ACL 或密钥后重新创建两个服务，并同步更新 AstrBot 环境变量。

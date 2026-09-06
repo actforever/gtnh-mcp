@@ -13,11 +13,12 @@ Bridge = module.Bridge
 
 
 class Event:
-    def __init__(self, user="admin", group="group", text=""):
+    def __init__(self, user="admin", group="group", text="", platform="test"):
         self.user, self.group, self.message_str = user, group, text
+        self.platform = platform
 
     def get_platform_name(self):
-        return "test"
+        return self.platform
 
     def get_group_id(self):
         return self.group
@@ -39,12 +40,67 @@ def test_bridge_uses_event_not_text(settings):
         actor.require_admin(settings)
 
 
-def test_bridge_rejects_private_chat(settings):
+@pytest.mark.parametrize("platform", ["test", "qq_official"])
+def test_bridge_rejects_private_chat(settings, platform):
     bridge = Bridge(
         "http://127.0.0.1:8000/mcp", settings.auth_secret.get_secret_value()
     )
     with pytest.raises(ValueError):
-        bridge.token(Event(group=""))
+        bridge.token(Event(group="", platform=platform))
+
+
+def test_official_qq_identity_and_acl(settings):
+    settings.allowed_groups = ["qq_official:Group_OpenID_A7"]
+    settings.admin_users = ["qq_official:Member_OpenID_B9"]
+    bridge = Bridge(
+        "http://127.0.0.1:8000/mcp", settings.auth_secret.get_secret_value()
+    )
+    event = Event(
+        platform="qq_official", group="Group_OpenID_A7", user="Member_OpenID_B9"
+    )
+    actor = verify(bridge.token(event), settings)
+    assert actor.key == "qq_official:Group_OpenID_A7:Member_OpenID_B9"
+    actor.require_admin(settings)
+    for user in ["Other_Member", "member_openid_b9", "123456789"]:
+        event.user = user
+        with pytest.raises(Denied):
+            verify(bridge.token(event), settings).require_admin(settings)
+    event.group = "123456789"
+    with pytest.raises(Denied):
+        verify(bridge.token(event), settings)
+
+
+def test_official_qq_confirmation_bound_to_event(settings):
+    from conftest import make_archive
+    from test_restore import FakeControl, FakeRcon
+
+    from gtnh_mcp.restore import RestoreManager
+
+    settings.allowed_groups = ["qq_official:Group_A", "qq_official:Group_B"]
+    settings.admin_users = ["qq_official:Member_A", "qq_official:Member_B"]
+    bridge = Bridge(
+        "http://127.0.0.1:8000/mcp", settings.auth_secret.get_secret_value()
+    )
+    event = Event(platform="qq_official", group="Group_A", user="Member_A")
+    make_archive(settings.backup_dir / "sample.tar.gz")
+    manager = RestoreManager(settings, FakeControl(), FakeRcon())
+    try:
+        job = manager.request(
+            verify(bridge.token(event), settings), manager.backups.listing()[0]["id"]
+        )
+        for group, user in [("Group_B", "Member_A"), ("Group_A", "Member_B")]:
+            other = Event(platform="qq_official", group=group, user=user)
+            with pytest.raises(Denied):
+                manager.confirm(
+                    verify(bridge.token(other, job["id"]), settings), job["id"]
+                )
+        assert manager.control.calls == []
+        manager.confirm(verify(bridge.token(event, job["id"]), settings), job["id"])
+        for future in manager.futures:
+            future.result(timeout=10)
+        assert manager.load(job["id"])["phase"] == "succeeded"
+    finally:
+        manager.close()
 
 
 async def test_confirmation_not_available_to_llm(settings, monkeypatch):
