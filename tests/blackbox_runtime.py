@@ -171,11 +171,11 @@ def mcp():
     from gtnh_mcp.server import HelperClient, create_server
 
     class LoopbackHelperClient(HelperClient):
+        # Test-only TCP endpoint; production uses the UDS transport.
+        rpc_url = "http://127.0.0.1:" + os.environ["BLACKBOX_HELPER_PORT"] + "/rpc"
+
         def connection(self):
-            return httpx.AsyncClient(
-                base_url="http://127.0.0.1:" + os.environ["BLACKBOX_HELPER_PORT"],
-                timeout=30,
-            )
+            return httpx.AsyncClient(timeout=30)
 
     settings = Settings.from_env()
     create_server(settings, helper=LoopbackHelperClient(settings)).run(

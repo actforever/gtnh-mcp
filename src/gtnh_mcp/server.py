@@ -38,6 +38,10 @@ class IdentityVerifier(TokenVerifier):
 
 
 class HelperClient:
+    # HTTPX requires an absolute HTTP URL. localhost supplies the Host header;
+    # the UDS transport connects only to settings.socket_path, never TCP/DNS.
+    rpc_url = "http://localhost/rpc"
+
     def __init__(self, settings: Settings):
         self.settings = settings
 
@@ -45,15 +49,13 @@ class HelperClient:
         transport = httpx.AsyncHTTPTransport(
             uds=str(self.settings.socket_path), retries=0
         )
-        return httpx.AsyncClient(
-            transport=transport, base_url="http://helper", timeout=600
-        )
+        return httpx.AsyncClient(transport=transport, timeout=600)
 
     async def call(self, token: str, action: str, value: str = ""):
         try:
             async with self.connection() as client:
                 response = await client.post(
-                    "/rpc",
+                    self.rpc_url,
                     json={"action": action, "value": value},
                     headers={"Authorization": f"Bearer {token}"},
                 )

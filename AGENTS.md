@@ -9,6 +9,7 @@
 - `astrbot_plugin` is the separately installed AstrBot bridge. Sign actual message identities; never accept identity or role from model arguments. Confirmation is a command, not an LLM tool.
 - Its signing secret comes from AstrBot's `GTNH_AUTH_SECRET`; plugin settings only contain the MCP URL. Do not register the service a second time through AstrBot native MCP configuration.
 - MCP and AstrBot use Linux Docker host networking. Only the restore helper mounts the Docker socket and server directories; MCP calls it through a Unix socket.
+- The restore HTTP client uses an explicit `http://localhost/rpc` URL without `base_url`; its hostname is only HTTP metadata. The UDS transport selects the actual socket path. Test-only loopback transport overrides the full RPC URL.
 - Details belong in `docs/architecture.md`, `docs/security.md`, `docs/restore.md`, `docs/configuration.md`, `docs/deployment.md`, and `docs/testing.md`.
 - Reuse the user's existing AstrBot with its built-in QQ Official adapter. `compose.chat.yaml` is an optional AstrBot-only Linux host-network template for new installations; do not introduce a separate QQ gateway. Use actual `/gtnh_identity` output for platform/group/user ACLs, never assume numeric QQ identifiers. Keep every `.env.example` variable documented in `docs/configuration.md` and the end-to-end NAS procedure in `docs/deployment.md`.
 

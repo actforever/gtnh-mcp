@@ -71,7 +71,8 @@ services:
     read_only: true
     tmpfs: [/tmp]
     healthcheck:
-      test: [CMD, python, -c, "import httpx; c=httpx.Client(transport=httpx.HTTPTransport(uds='/run/gtnh/restore.sock')); c.get('http://helper/health',timeout=3).raise_for_status()"]
+      # The HTTP hostname is a placeholder; the connection uses the UDS path.
+      test: [CMD, python, -c, "import httpx; c=httpx.Client(transport=httpx.HTTPTransport(uds='/run/gtnh/restore.sock')); c.get('http://localhost/health',timeout=3).raise_for_status()"]
       interval: 15s
       timeout: 5s
       retries: 3
