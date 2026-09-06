@@ -3,9 +3,9 @@
 ```mermaid
 flowchart LR
     Group[QQ 官方机器人群消息] --> Plugin[现有 AstrBot 内置接入 + GTNH 插件]
-    Plugin -->|签名身份 / Streamable HTTP| MCP[FastMCP]
+    Plugin -->|固定密钥与调用者标识 / Streamable HTTP| MCP[FastMCP]
     MCP -->|RCON| GTNH[GTNH]
-    MCP -->|Unix socket / 原始身份凭据| Helper[独立恢复服务]
+    MCP -->|Unix socket / 密钥与调用者标识| Helper[独立恢复服务]
     Helper -->|指定容器| Docker[Docker Engine]
     Helper -->|RCON 停服与就绪检测| GTNH
     Helper --> Files[备份与存档目录]
@@ -16,7 +16,7 @@ flowchart LR
 | 模块 | 职责 |
 | --- | --- |
 | `config` | 环境变量配置、SecretStr、启动校验 |
-| `auth` | 60 秒 HS256 身份验证、群白名单、管理员检查 |
+| `auth` | 固定 Bearer 密钥比较、可选调用者标识解码 |
 | `rcon` | mcrcon 0.7.0 的线程适配、命令参数校验、跨进程操作锁 |
 | `server` | FastMCP 工具、每次调用鉴权、私有恢复服务客户端 |
 | `backups` | ZIP/tar.gz 枚举、SHA-256、ZIP CRC、归档结构与容量校验、流式暂存 |
@@ -29,7 +29,11 @@ MCP 服务非 root 运行，不能访问 Docker socket 或存档。恢复服务�
 
 MCP 的恢复客户端不配置 `base_url`，请求使用完整 HTTP URL `http://localhost/rpc`。这里的 `localhost` 只提供 HTTP 主机信息，不参与 TCP/DNS 寻址；`AsyncHTTPTransport(uds=...)` 决定连接 `/run/gtnh/restore.sock`。`helper.py` 监听该 socket 并注册 `/rpc` 路由，再调用 `restore.py` 的任务逻辑，无需声明 URL 中的主机名。Compose 健康检查同样通过 socket 请求 `/health`。
 
-两个服务使用相同镜像的不同入口，并非两个独立项目。插件安装在已有 AstrBot 内，使用其统一消息接口传递可验证的群成员身份与处理人工确认；QQ 官方接入由 AstrBot 内置适配器完成。恢复服务隔离 Docker 与文件写权限，不负责生成定时备份。完整链路见 [README](../README.md)。GTNH 通过单次 `exec java` 启动，由 Docker 接管自动重启，恢复服务才能临时关闭重启策略并等待 RCON stop 后容器退出。
+两个服务使用相同镜像的不同入口，并非两个独立项目。插件安装在已有 AstrBot 内，使用其统一消息接口检查群权限、传递实际消息标识与处理人工确认；QQ 官方接入由 AstrBot 内置适配器完成。恢复服务隔离 Docker 与文件写权限，不负责生成定时备份。完整链路见 [README](../README.md)。GTNH 通过单次 `exec java` 启动，由 Docker 接管自动重启，恢复服务才能临时关闭重启策略并等待 RCON stop 后容器退出。
+
+后端不理解 QQ 角色。`X-GTNH-Actor` 是 UTF-8 标识的 Base64URL 编码，仅用于任务归属及确认匹配；未提供时为 `api-client`。它不是签名，拥有密钥的可信客户端可指定标识。旧日志 `platform:group:user` 保持兼容。插件配置及信任边界见 [安全说明](security.md)。
+
+恢复服务只绑定一个游戏根目录到 `/gtnh`，备份自然位于 `/gtnh/backups`。因此备份不再是独立只读挂载；程序只读取备份，但挂载权限不能阻止恢复进程写入该目录。MCP 不挂载游戏目录。镜像代码工作目录为 `/app`。
 
 ## 并发与持久化
 

@@ -107,11 +107,14 @@ RCON_PORT=25575
 RCON_PASSWORD='与server.properties一致的RCON密码'
 RCON_TIMEOUT=10
 MCP_PORT=8000
-ALLOWED_GROUPS='["qq_official:REPLACE_WITH_GROUP_ID"]'
-ADMIN_USERS='["qq_official:REPLACE_WITH_USER_ID"]'
+MCP_HOST=127.0.0.1
+RUNTIME_DIR=/run/gtnh
+STATE_DIR=/state
 GTNH_CONTAINER_NAME=gtnh
 GTNH_SERVER_ROOT=/volume2/sharev9/minecraft/gtnh
-GTNH_BACKUP_DIR=/volume2/sharev9/minecraft/gtnh/backups
+DOCKER_GID=替换为实际数字组ID
+SERVER_ROOT=/gtnh
+BACKUP_DIR=/gtnh/backups
 WORLD_DIRECTORY=World
 STOP_TIMEOUT=180
 STARTUP_TIMEOUT=900
@@ -120,7 +123,9 @@ MAX_ARCHIVE_MEMBERS=1000000
 FREE_SPACE_RESERVE=1073741824
 ```
 
-身份占位值在第 9 步用实际输出替换；首次尚未取得身份时可以暂留占位值，真实群调用会被拒绝，`/gtnh_identity` 在插件本地执行，不依赖 MCP 授权。全部变量的用途、单位及相互关系见 [配置参考](configuration.md)。检查 MCP Compose；渲染结果包含密码，不要公开粘贴：
+先在 NAS 执行 `stat -c '%g' /var/run/docker.sock`，将输出填入 DOCKER_GID。用 `test -d /volume2/sharev9/minecraft/gtnh/World` 和 `test -d /volume2/sharev9/minecraft/gtnh/backups` 确认目录存在，避免短挂载语法因拼写错误创建空目录。容器内游戏数据默认位于 /gtnh，项目代码工作目录仍是 /app；备份随根目录挂载，不再单独挂载。群权限不写进后端 .env，第 8–9 步在插件配置。
+
+全部变量的用途、单位及相互关系见 [配置参考](configuration.md)。仅在 NAS 检查 Compose；不要公开粘贴包含密码的渲染结果：
 
 ```sh
 docker compose config --quiet
@@ -136,7 +141,23 @@ docker compose logs --tail=100 restore mcp
 curl --fail http://127.0.0.1:8000/health
 ```
 
-健康接口应返回 `{"status":"ok"}`。它只证明 MCP 进程可用，不证明 RCON 或备份正确。
+健康接口应返回 `{"status":"ok"}`。它只证明 MCP 进程可用，不证明 RCON 或备份正确，也不代表 /mcp 无需认证。
+
+restore 健康检查间隔及启动宽限期均为 10s，mcp 继续等待 restore 健康。start_period 是失败宽限期，不强制延迟健康状态；启动时若需恢复旧任务，仍必须等待恢复完成。35m 的 stop_grace_period 是独立的优雅停止时间。
+
+### Inspector 连接
+
+在自己的电脑执行并保持 SSH 隧道运行：
+
+```sh
+ssh -N -L 8000:127.0.0.1:8000 pineclone.nas
+```
+
+MCP Inspector 选择 **Streamable HTTP**，URL 填 `http://127.0.0.1:8000/mcp`，自定义请求头名称填 `Authorization`，值填 `Bearer <AUTH_SECRET>`，替换为 .env 的实际密钥，不带尖括号。若界面提供 Bearer Token 输入框，只填密钥本身；无需 OAuth 或 JWT 签发。Inspector 代理自身的令牌与本项目密钥是两种配置，不要混用。界面字段随版本变化，参见 [Inspector 服务连接配置](https://github.com/modelcontextprotocol/inspector/blob/main/docs/mcp-server-configuration.md)。
+
+连接后先 List Tools，再调用 list_players、list_backups。默认不填 X-GTNH-Actor，任务归属为 api-client，申请与确认须保持标识一致。Inspector 持有全部 API 权限，确认恢复会真正停服，只在隔离测试服执行。
+
+本地 8000 被占用时，将隧道第一个端口换成 18000，Inspector URL 同步使用 18000。健康可达但 MCP 返回 401/403 时，核对 Bearer 请求头、密钥及后端容器是否重建；连接拒绝则先排查隧道、监听 IP/端口和容器日志。
 
 `mcp` 以非 root 用户提供 HTTP 工具并访问 RCON；`restore` 挂载 Docker socket 与游戏目录，负责受控恢复。恢复服务没有 TCP 端口，只接受共享 Unix socket 请求。GTNH 不是本项目 Compose 的一部分，恢复服务只操作 `.env` 指定的现有容器。
 
@@ -182,7 +203,7 @@ QQ AppID/AppSecret 只配置在 AstrBot 官方适配器中，与本项目的 `AU
 
 ### 已有 AstrBot
 
-先在现有 AstrBot 的原 Compose/NAS 配置中加入环境变量 `GTNH_AUTH_SECRET`，值与本项目 `.env` 的 `AUTH_SECRET` 完全一致。若使用 Compose，可以在 **AstrBot 项目自己的** `.env` 保存同值，再合并以下片段，不覆盖其他配置：
+推荐在插件页面填写 auth_secret。如需环境回退，可在现有 AstrBot 的原 Compose/NAS 配置中加入 GTNH_AUTH_SECRET，值与后端 AUTH_SECRET 完全一致。以下是可选示例，使用页面配置时无需添加：
 
 ```yaml
 services:
@@ -197,7 +218,7 @@ services:
 # 从本项目目录复制到现有 AstrBot 的持久化插件目录
 mkdir -p /实际AstrBot数据目录/plugins/astrbot_plugin_gtnh
 cp -R astrbot_plugin/. /实际AstrBot数据目录/plugins/astrbot_plugin_gtnh/
-# 使用原项目配置重建以注入环境变量，保留原数据挂载
+# 仅变更环境变量时重建；页面配置方式跳过这一条
 docker compose --env-file /实际AstrBot项目目录/.env -f /实际AstrBot项目目录/compose.yaml up -d --force-recreate <AstrBot服务名>
 docker exec <AstrBot容器名> python -m pip install -r /AstrBot/data/plugins/astrbot_plugin_gtnh/requirements.txt
 docker restart <AstrBot容器名>
@@ -222,13 +243,16 @@ docker compose -f compose.chat.yaml restart astrbot
 
 顺序必须是先重建容器、再安装依赖、最后普通 restart。pip 安装的依赖位于容器可写层，重建会丢失；以后每次重新创建 AstrBot 容器都应重新执行安装和 restart。插件文件本身位于持久化目录，不会因重建丢失。
 
-进入 AstrBot 插件管理，确认 `astrbot_plugin_gtnh` 已加载。插件设置填写：
+进入 AstrBot 插件管理，配置页面填写以下内容并重载。缺少密钥时初始化会报错，先填写再重载；群列表暂设 [] 后仍可使用本地身份诊断。配置文件由 AstrBot 根据 schema 创建，见 [官方插件配置说明](https://github.com/AstrBotDevs/AstrBot/blob/master/docs/en/dev/star/guides/plugin-config.md)：
 
 ```text
 mcp_url = http://127.0.0.1:8000/mcp
+auth_secret = 与后端 AUTH_SECRET 一致（使用环境回退时留空）
+allowed_groups = []
+admin_users = []
 ```
 
-改过 `MCP_PORT` 时同步修改该地址。启用十个 `gtnh_*` 对话工具（包括 `gtnh_request_undo_restore`）。不要再从 AstrBot 原生 MCP 页面添加本服务，否则那条连接无法携带群成员的可信身份。
+改过 MCP_PORT 时同步修改地址。显式 [] 拒绝所有群/管理员；留空分别读取 AstrBot 环境的 ALLOWED_GROUPS、ADMIN_USERS，非空页面值优先。非法 JSON 或短密钥会导致初始化报错。启用十个 gtnh_* 对话工具。不要从 AstrBot 原生 MCP 页面重复添加本服务，否则绕过插件权限并向模型提供确认工具。
 
 ## 9. 核对群和管理员身份
 
@@ -238,13 +262,13 @@ mcp_url = http://127.0.0.1:8000/mcp
 platform=qq_official group=GROUP_OPENID_EXAMPLE user=USER_ID_EXAMPLE
 ```
 
-群内若需 @ 触发，发送“@机器人 /gtnh_identity”。用实际 `platform:group` 更新 `ALLOWED_GROUPS`，用实际 `platform:user` 更新 `ADMIN_USERS`，保留大小写及完整字符串。上面的输出只是格式示例，不要照抄。QQ 官方群消息使用开放平台标识（群为 `group_openid`），不能直接填写普通群号、QQ 号；平台前缀也以实际输出为准。修改后在本项目目录重新创建服务：
+群内若需 @ 触发，发送“@机器人 /gtnh_identity”。在插件页面用实际 `platform:group` 填写 `allowed_groups` JSON 数组，用实际 `platform:user` 填写 `admin_users` JSON 数组，保留大小写及完整字符串。上面的输出只是格式示例，不要照抄。QQ 官方群消息使用开放平台标识（群为 `group_openid`），不能直接填写普通群号、QQ 号；平台前缀也以实际输出为准。修改插件页面后保存并重载插件即可。示例为 `["qq_official:GROUP_OPENID_EXAMPLE"]` 和 `["qq_official:USER_ID_EXAMPLE"]`，使用真实值替换。使用环境回退时，在 AstrBot 原项目更新环境并重建；后端不读取 QQ ACL。下列命令仅在更改后端 .env 时需要：
 
 ```sh
 docker compose up -d --force-recreate
 ```
 
-管理员权限完全由项目配置决定，不自动继承 QQ 群主、群管理员或 AstrBot 管理员身份。
+管理员权限完全由插件配置决定，不自动继承 QQ 群主、群管理员或 AstrBot 管理员身份。
 
 ## 10. 首次功能检查
 
@@ -274,6 +298,14 @@ docker compose up -d --force-recreate
 如需撤销成功回档，让机器人根据该成功任务编号申请撤销，再由本人确认新任务编号。测试服应验证世界回到原回档前状态，撤销前的世界保存在新任务的 `previous`，详见 [撤销回档](restore.md#撤销已经完成的回档)。更新到支持撤销的版本时，要同时更新 MCP/恢复镜像和 AstrBot 插件。
 
 ## 12. 更新和日常管理
+
+### 从旧 JWT 版本迁移
+
+先等待恢复任务结束，保留现有 .env、状态卷和游戏 .gtnh-restore 副本。将旧 .env 中 ALLOWED_GROUPS、ADMIN_USERS 的 JSON 值迁移到 AstrBot 插件页面（或 AstrBot 原有环境），后端已不读取这些字段。auth_secret 填原 AUTH_SECRET，或留空使用原 GTNH_AUTH_SECRET；页面非空值会覆盖环境值。
+
+对照新 .env.example 补齐 DOCKER_GID、MCP_HOST、SERVER_ROOT、BACKUP_DIR、RUNTIME_DIR、STATE_DIR，不用模板覆盖真实密码。删除已废弃的 GTNH_BACKUP_DIR，确认原备份实际位于游戏根目录的 backups 下。更新后的根目录挂载从 /server 变为 /gtnh，但 NAS 根目录、Compose 项目名、runtime/restore-state 卷应保持原值，以继续读取日志和 previous。
+
+本次必须同时更新后端镜像和插件，旧 JWT 插件不能连接新固定密钥后端。维护窗口内重建后端、复制插件、安装依赖并重载，最后验证 Inspector 与 QQ 调用。无需删除历史任务或重新部署 AstrBot。
 
 先更新 MCP 服务，再按第 8 步对应的部署方式更新现有插件及依赖。已有 AstrBot 继续使用原项目管理命令，不执行下面可选模板的聊天服务命令。
 
@@ -311,7 +343,7 @@ docker compose -f compose.chat.yaml logs --tail=100 astrbot
 | `/health` 失败 | 8000 是否占用；MCP 日志；`.env` 必填项是否合法 |
 | MCP 健康但查询玩家失败 | RCON 是否启用；端口映射、密码与地址是否正确 |
 | 插件加载失败 | 插件目录和文件；requirements 是否安装；AstrBot 是否为兼容的 4.x |
-| 身份无效 | `GTNH_AUTH_SECRET` 是否与 `AUTH_SECRET` 一致；是否 force-recreate |
+| 401/403 或调用被拒绝 | 页面 auth_secret（优先）或 GTNH_AUTH_SECRET 是否匹配 AUTH_SECRET；是否重载插件或重建环境 |
 | 群未授权 | 用 `/gtnh_identity` 核对平台和群 ID；检查 JSON 数组格式 |
 | QQ 消息进不了 AstrBot | 官方机器人是否启用、凭据与开放平台群权限、目标群是否需 @ 触发；检查原适配器日志 |
 | AstrBot 连不上健康的 MCP | 是否同一 NAS 且 AstrBot 使用 host 网络；bridge 容器的回环地址不能访问宿主机 MCP |

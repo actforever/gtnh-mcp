@@ -1,128 +1,69 @@
 # 配置参考
 
-## `.env` 怎样进入程序
+## 配置如何生效
 
-`.env.example` 只是模板，部署前将它复制为 `.env`。Docker Compose 读取 `.env`，替换 Compose 文件中的 `${变量名}`，再通过服务的 `environment` 把值传入容器。Python 程序本身不会自动寻找或加载 `.env`。
+复制 `.env.example` 为 `.env`。Compose 用它替换挂载、GID 等 `${变量}`，两个服务还通过 `env_file: .env` 取得程序环境变量。Python 本身不自动加载 dotenv；直接使用 uv 启动时需在进程环境设置变量。修改后执行 `docker compose up -d --force-recreate`，普通 restart 不会更新环境。
 
-```text
-.env ──Compose 变量替换──> compose.yaml ──容器 environment──> Python Settings
-```
+密码含空格、#、$ 时使用 dotenv 单引号，例如 `RCON_PASSWORD='p@ss word#2026$'`。不要提交真实 .env。QQ ACL 仅配置在 AstrBot 插件或 AstrBot 原有环境中，不属于后端 .env。
 
-修改 `.env` 后执行 `docker compose up -d --force-recreate` 才会更新容器环境变量；`docker compose restart` 不会注入新值。
+## .env 全部变量
 
-`ALLOWED_GROUPS` 和 `ADMIN_USERS` 必须是合法 JSON 数组，建议用单引号包住整个 JSON。密码含空格、`#`、`$` 等符号时也建议使用单引号：
+| 变量 | 默认/示例 | 作用 |
+| --- | --- | --- |
+| `AUTH_SECRET` | 必填，至少 32 字符 | MCP 与恢复服务共同校验的固定 Bearer 密钥；建议 `openssl rand -hex 32`。不是 RCON 密码或 QQ AppSecret。持有者拥有全部 MCP 工具权限。 |
+| `MCP_HOST` | `127.0.0.1` | MCP 监听 IP；默认仅 NAS 本机可访问。同机 host 网络 AstrBot 可用，远程 Inspector 建议 SSH 隧道。设成 `0.0.0.0` 会监听所有 IPv4 接口，需自行限制入口。 |
+| `MCP_PORT` | `8000` | MCP HTTP 端口，1–65535；工具路径 /mcp，健康路径 /health。修改后同步插件 URL、Inspector URL 和隧道端口。 |
+| `RCON_HOST` | `127.0.0.1` | MCP 和恢复服务访问 GTNH RCON 的主机；host 网络使用 NAS 回环地址。 |
+| `RCON_PORT` | `25575` | RCON 实际可达 TCP 端口，1–65535；匹配 server.properties 或宿主机发布端口。 |
+| `RCON_PASSWORD` | 必填 | 必须与 GTNH 的 rcon.password 一致，不能与访问密钥混用。 |
+| `RCON_TIMEOUT` | `10` 秒 | RCON 建连和读取超时，范围 1–120；写入超时后结果可能未知，不自动重发。 |
+| `GTNH_CONTAINER_NAME` | `gtnh` | 唯一允许管理的已有 GTNH 容器名，使用 docker ps 核对。Compose 映射为程序的 CONTAINER_NAME。 |
+| `GTNH_SERVER_ROOT` | `/volume2/sharev9/minecraft/gtnh` | NAS 实际游戏根目录，直接包含 World、visualprospecting、backups；部署前确保存在。 |
+| `DOCKER_GID` | 必填 | Docker socket 的数字组 ID；在 NAS 执行 `stat -c '%g' /var/run/docker.sock`，填结果。restore 用 group_add 加入该组，不需容器内存在同名组。 |
+| `SERVER_ROOT` | `/gtnh` | restore 容器内游戏根目录，也是 GTNH_SERVER_ROOT 的挂载目标；不是项目 WORKDIR（仍为 /app）。 |
+| `BACKUP_DIR` | `/gtnh/backups` | restore 容器内已有 ZIP/tar.gz 目录。必须位于映射的 SERVER_ROOT 内；修改根目录时同步调整。没有独立备份挂载及 GTNH_BACKUP_DIR 配置。 |
+| `WORLD_DIRECTORY` | `World` | 世界单层目录名，必须与磁盘、归档和 level-name 一致；旧服可显式设 Worlds，不自动改名。 |
+| `RUNTIME_DIR` | `/run/gtnh` | 两服务共享命名卷目标，存放 restore.sock、操作锁、维护标记；两者必须一致。 |
+| `STATE_DIR` | `/state` | restore-state 命名卷目标，持久化任务日志及恢复进度。 |
+| `STOP_TIMEOUT` | `180` 秒 | RCON stop 后等待容器退出的期限。到期不强杀、不切换目录，进入人工检查。 |
+| `STARTUP_TIMEOUT` | `900` 秒 | 启动容器后等待 RCON list 成功的期限；超时触发失败回滚。大型整合包按实际耗时调整。 |
+| `MAX_ARCHIVE_BYTES` | `107374182400`（100 GiB） | 归档解压后普通文件总大小上限；也限制撤销来源 previous 的文件总量。不是压缩包大小。 |
+| `MAX_ARCHIVE_MEMBERS` | `1000000` | 单个归档或撤销来源的文件及目录数量上限，不是备份数量。 |
+| `FREE_SPACE_RESERVE` | `1073741824`（1 GiB） | 满足暂存需求后必须剩余的空间；旧存档长期保留，应监控磁盘。 |
+
+世界名只接受 1–64 位英文字母、数字、下划线、连字符或点，首位不能为点或连字符，末位不能为点，不接受保留名（如 backups、visualprospecting）。不接收绝对路径。新任务保存两个目录名，旧日志无目录字段时按 Worlds 兼容；修改配置前结束当前任务。
+
+根目录、两个世界目录和 .gtnh-restore 必须在同一文件系统，世界目录不能是独立 bind mount。一个根目录挂载自然包含 backups，因此备份不再具有独立只读挂载保护；程序仅读取归档。
+
+## AstrBot 插件配置
+
+在插件配置页填写以下四项，保存后重载插件。首次先填写密钥，群和管理员设为 `[]`，加载后用目标群 `/gtnh_identity` 获取真实身份，再填写列表并重载。
+
+| 页面字段 | 用途 | 留空时读取的 AstrBot 环境变量 |
+| --- | --- | --- |
+| `mcp_url` | 完整 Streamable HTTP 地址，默认 http://127.0.0.1:8000/mcp | 无 |
+| `auth_secret` | 与后端 AUTH_SECRET 完全一致的固定密钥 | `GTNH_AUTH_SECRET` |
+| `allowed_groups` | JSON 文本，例如 `["qq_official:GROUP_OPENID"]` | `ALLOWED_GROUPS` |
+| `admin_users` | JSON 文本，例如 `["qq_official:USER_OPENID"]` | `ADMIN_USERS` |
+
+非空页面值优先；只含空白视为留空。显式 `[]` 覆盖环境变量，分别表示禁用所有群、无人拥有管理员权限。未设置 ACL 时也按空数组处理。非法 JSON、非字符串数组、重复项、缺少平台前缀及短密钥会使插件初始化报错；不会悄悄退回环境配置。密钥必须先有效配置，插件才能加载并响应身份诊断。
+
+ID 保留大小写，使用实际 `platform:group`、`platform:user`，不要用普通 QQ 号代替开放平台标识。管理员仍须来自允许群，私聊拒绝运维调用。管理员权限不继承 QQ 群主或 AstrBot 管理员身份。
+
+环境变量回退仅用于已有 AstrBot 的原启动环境，例如：
 
 ```dotenv
-RCON_PASSWORD='p@ss word#2026$'
-ALLOWED_GROUPS='["qq_official:REPLACE_WITH_GROUP_ID"]'
-ADMIN_USERS='["qq_official:REPLACE_WITH_USER_ID"]'
+GTNH_AUTH_SECRET='与后端AUTH_SECRET一致'
+ALLOWED_GROUPS='["qq_official:实际群标识"]'
+ADMIN_USERS='["qq_official:实际用户标识"]'
 ```
 
-不要在等号两边加空格，也不要提交真实 `.env`。
+另一个 Compose 项目不会自动读本项目 .env。页面配置无需重建 AstrBot 容器；变更容器环境变量需在其原项目重建。密钥保存在插件配置或环境中，保护 AstrBot 数据目录，不发送到群聊。不要重复添加 AstrBot 原生 MCP 连接，否则绕过插件 ACL 和人工确认入口。
 
-## 身份与网络配置
+## 持久化及生命周期
 
-### `AUTH_SECRET`
+runtime 和 restore-state 是命名卷；游戏 previous 副本在游戏根目录 .gtnh-restore 下。不要执行 `docker compose down -v`。恢复执行中不应重建服务。
 
-AstrBot 配套插件用它签发短期身份凭据，MCP 和恢复服务用同一值验签。必填，至少 32 字符，建议执行 `openssl rand -hex 32` 生成。AstrBot 容器内变量名是 `GTNH_AUTH_SECRET`；已有实例须在原部署配置中注入同值，本项目可选 `compose.chat.yaml` 会从同一个 `.env` 映射。另一个 Compose 项目不会自动读取本项目 `.env`。
+restore 的健康检查 interval 和 start_period 均为 10s，timeout 5s、retries 3；start_period 是启动失败宽限期，不是固定等待。服务先恢复旧任务才就绪，耗时较长时仍需等待实际恢复。mcp 依赖 restore 健康启动。
 
-它不是 RCON 密码、AstrBot 管理密码、QQ 官方机器人 AppSecret 或模型 API Key。泄露后应生成新值，并在各自原部署配置中更新、重新创建 MCP、恢复服务和 AstrBot 容器。
-
-### `RCON_HOST`
-
-MCP 和恢复服务连接 Minecraft RCON 的主机地址。项目服务使用 host 网络，GTNH 也使用 host 网络时保持 `127.0.0.1`。若 GTNH 使用 bridge 网络，应把 RCON 端口仅发布到 NAS 回环地址，然后仍使用 `127.0.0.1`。
-
-### `RCON_PORT`
-
-NAS 实际监听的 RCON TCP 端口，默认 `25575`，有效范围 1–65535。它必须对应 `server.properties` 的 `rcon.port`，或 GTNH 容器发布到宿主机的端口。
-
-### `RCON_PASSWORD`
-
-连接 GTNH RCON 的密码，必须与 `server.properties` 的 `rcon.password` 完全一致。它只用于服务到游戏服的连接，不应与 `AUTH_SECRET` 共用。
-
-### `RCON_TIMEOUT`
-
-RCON 建连和单次响应读取的超时秒数，默认 10，范围 1–120。写命令超时后的结果可能未知，程序不会自动重发；应先查询服务器状态。
-
-### `MCP_PORT`
-
-FastMCP Streamable HTTP 的监听端口，默认 8000。MCP 固定监听 `127.0.0.1`，地址是 `http://127.0.0.1:8000/mcp`。修改后必须同步修改 AstrBot 插件的 `mcp_url`。
-
-此地址适用于同一 NAS 上采用 host 网络或宿主机进程方式运行的 AstrBot；bridge 容器内的回环地址指向自身。现有实例的网络检查与调整见 [部署教程](deployment.md#5-复用现有-astrbot首次部署可选)。
-
-### `ALLOWED_GROUPS`
-
-允许调用工具的群列表，必填 JSON 数组。元素格式为 `平台名:群ID`。QQ 官方机器人示例为 `qq_official:REPLACE_WITH_GROUP_ID`，必须用目标群 `/gtnh_identity` 返回的 `platform` 和 `group` 替换；官方群标识不是普通 QQ 群号。管理员也必须从允许的群发起操作。私聊没有群 ID，会被拒绝。
-
-### `ADMIN_USERS`
-
-拥有白名单管理、备份恢复及撤销权限的用户列表，JSON 数组。元素格式为 `平台名:用户ID`；使用 `/gtnh_identity` 返回的 `platform` 和 `user`，不要直接填写普通 QQ 号，也不要猜测开放平台标识。身份按完整字符串匹配，不转换为数字或统一大小写。空数组 `[]` 表示无人有管理权限。这里的权限独立于 QQ 群主、QQ 群管理员和 AstrBot 管理员，必须显式配置。
-
-## GTNH 容器与目录配置
-
-### `GTNH_CONTAINER_NAME`
-
-恢复服务唯一允许停启的 Docker 容器名称。使用 `docker ps --format '{{.Names}}'` 查询；Compose service 名和最终容器名不一定相同。配置错误时恢复申请会失败，程序不会自动选择其他容器。
-
-### `GTNH_SERVER_ROOT`
-
-NAS 上的游戏服务端根目录，模板为 `/volume2/sharev9/minecraft/gtnh`，必须直接包含 `WORLD_DIRECTORY` 指定的世界目录和 `visualprospecting`。恢复服务把它映射为 `/server`，并在其中创建 `.gtnh-restore/<任务ID>` 保存暂存和新旧存档。
-
-这不是本项目代码目录。世界目录、`visualprospecting` 和 `.gtnh-restore` 必须在同一文件系统中；两个世界目录不能分别作为独立 bind mount，否则无法保证原子目录切换。
-
-### `GTNH_BACKUP_DIR`
-
-NAS 上存放现有 `*.zip` 或 `*.tar.gz` 的目录，模板为 `/volume2/sharev9/minecraft/gtnh/backups`。它以只读方式映射为 `/backups`。每个归档解压后必须只包含配置的世界目录和 `visualprospecting` 两个顶层目录。
-
-### `WORLD_DIRECTORY`
-
-服务端根目录下的世界目录名，默认 `World`，大小写必须与磁盘及备份内部一致。旧部署若实际使用 `Worlds`，应明确填写 `Worlds`，程序不会自动重命名存档。只接受单层目录名：1–64 个英文字母、数字、下划线、连字符或点，首字符须为字母、数字或下划线，不得以点结尾，也不能使用保留名称（如 `backups`、`visualprospecting`）。它不是完整路径，不会修改 Minecraft 的 `level-name` 配置。
-
-新恢复任务保存申请时的两个目录名，后续切换和回滚均使用保存值；没有此字段的旧任务按原来的 `Worlds` 与 `visualprospecting` 处理。修改配置前应完成当前任务。
-
-### `STOP_TIMEOUT`
-
-恢复服务发送 RCON `stop` 后等待 Docker 确认 GTNH 容器退出的最长秒数，默认 180。到期后不会强杀进程或替换存档，而会进入人工检查状态。
-
-### `STARTUP_TIMEOUT`
-
-启动 GTNH 容器后等待 RCON `list` 成功的最长秒数，默认 900。大型整合包启动较慢时应提高；到期会触发回滚。
-
-### `MAX_ARCHIVE_BYTES`
-
-单个备份内所有普通文件解压后大小之和的上限，单位字节，默认 `107374182400`（100 GiB）。它不是 ZIP/tar.gz 压缩包大小，也不限制整个备份目录。
-
-申请撤销回档时，同一上限用于来源 `previous` 下两个目录的文件总大小。
-
-### `MAX_ARCHIVE_MEMBERS`
-
-单个归档允许的文件和目录条目数上限，默认 1,000,000。它用于限制异常归档，不表示最多保存多少份备份。
-
-撤销回档时也限制来源存档的文件与目录数量。
-
-### `FREE_SPACE_RESERVE`
-
-磁盘满足本次备份暂存空间后还必须保留的可用空间，单位字节，默认 `1073741824`（1 GiB）。恢复会长期保留旧存档，应持续监控磁盘空间。
-
-## AstrBot 与内部配置
-
-`compose.chat.yaml` 是仅含 AstrBot 的可选首次部署模板，使用独立项目名 `gtnh-chat`、host 网络和时区 `Asia/Shanghai`，AstrBot WebUI 默认端口为 6185，无需 `ports` 映射。已有 AstrBot 应沿用原项目、数据和机器人配置，仅安装 GTNH 插件、注入密钥并检查网络。
-
-`compose.yaml` 固定以下容器内值：`MCP_HOST=127.0.0.1`、`RUNTIME_DIR=/run/gtnh`、`SERVER_ROOT=/server`、`BACKUP_DIR=/backups`、`STATE_DIR=/state`、`CONTAINER_NAME=${GTNH_CONTAINER_NAME}`。宿主机路径由 volume 映射到内部路径，不要把宿主机路径直接写成容器路径。
-
-- `runtime` 命名卷保存 Unix socket、跨进程锁和维护标记，由 MCP 与恢复服务共享。
-- `restore-state` 命名卷保存恢复任务日志，用于服务重启后的恢复判断。
-- `runtime/astrbot-data` 是可选 AstrBot 模板的数据目录；已有实例沿用原数据挂载。
-
-不要执行 `docker compose down -v`，否则会删除恢复状态卷。恢复进行中也不应停止或重建服务。
-
-## 不同凭据不要混用
-
-| 凭据 | 用途 | 填写位置 |
-| --- | --- | --- |
-| `AUTH_SECRET` / `GTNH_AUTH_SECRET` | 签发和验证群成员身份 | MCP 项目 `.env`；现有 AstrBot 原部署环境，或可选模板映射 |
-| RCON 密码 | 服务连接 GTNH | GTNH `server.properties` 与项目 `.env` |
-| QQ AppID / AppSecret | AstrBot 连接 QQ 官方机器人 API | AstrBot 的 QQ 官方机器人平台配置 |
-| 模型 API Key | AstrBot 调用大语言模型 | AstrBot WebUI 的模型提供商设置 |
-
-这些凭据用途不同，不要复用，也不要发到群聊或写入 Git。
+`stop_grace_period: 35m` 保留给正在执行的恢复线程优雅退出，和健康检查无关。restore 当前 UID 0、主组 GID 10001，额外加入 DOCKER_GID；root 下缺少该组不一定是权限错误原因，仍需核对 NAS socket 权限、挂载及 Docker 日志。

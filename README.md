@@ -13,18 +13,22 @@
 ```mermaid
 flowchart TD
     QQ[QQ 群友] <-->|QQ 官方机器人 API| AstrBot[现有 AstrBot：内置 QQ 接入 + GTNH 插件]
-    AstrBot <-->|签名身份 / Streamable HTTP| MCP[MCP 服务：工具与权限检查]
+    AstrBot <-->|固定 Bearer 密钥 / Streamable HTTP| MCP[MCP 服务：密钥校验与工具]
     MCP <-->|RCON：查询、公告、保存、白名单| GTNH[GTNH 容器]
     MCP <-->|私有 Unix socket| Restore[恢复服务：备份校验与回档]
     Restore -->|Docker API：停启与重启策略| Docker[Docker Engine]
     Docker --> GTNH
     Restore <-->|RCON stop / list| GTNH
-    Restore --> Backups[backups：只读 ZIP / tar.gz]
+    Restore --> Backups[backups：现有 ZIP / tar.gz]
     Restore --> World[World + visualprospecting：读写]
     Restore --> State[任务日志 + 暂存目录 + previous 旧存档]
 ```
 
-插件从真实群消息取得用户和群身份并签名，MCP 按配置检查群和管理员权限；身份不由模型填写。回档须由原申请人在原群发送 `/gtnh_confirm <任务编号>` 确认，不能让模型代为确认。因此本部署使用配套插件，不再在 AstrBot 原生 MCP 页面重复添加服务。
+插件从真实群消息读取身份，在插件内检查允许群和管理员配置；身份不由模型填写。插件只通过原申请人在原群发送的 `/gtnh_confirm <任务编号>` 执行确认，不向模型注册确认工具。MCP 和恢复服务只校验固定访问密钥，持有密钥的直接客户端可调用全部工具。不要在 AstrBot 原生 MCP 页面重复添加服务，否则会绕过插件的群权限和人工确认入口。
+
+MCP Inspector 选择 **Streamable HTTP**，地址 `http://127.0.0.1:8000/mcp`，添加请求头 `Authorization: Bearer <AUTH_SECRET>`（将占位符替换为 `.env` 的实际值）。默认仅 NAS 本机可访问；本地电脑先执行 `ssh -N -L 8000:127.0.0.1:8000 pineclone.nas`。`/health` 无需密钥，健康不代表 MCP 已授权。具体步骤见 [部署教程](docs/deployment.md#inspector-连接)。
+
+容器内游戏根目录默认 `/gtnh`，备份为 `/gtnh/backups`；项目镜像工作目录仍为 `/app`。两个服务通过 `.env` 配置，恢复服务额外加入 Docker socket 的实际 GID，健康检查间隔和启动宽限期均为 10 秒。
 
 聊天侧复用已有 AstrBot 的内置 QQ 官方机器人接入，GTNH 插件安装在该实例内。`compose.chat.yaml` 仅供尚未部署 AstrBot 的用户选择使用，不需要另外启动一个 AstrBot。群和管理员权限按 `/gtnh_identity` 返回的平台与身份填写，不能直接套用普通 QQ 群号、QQ 号。
 

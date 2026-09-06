@@ -1,25 +1,12 @@
-x-settings: &settings
-  RCON_HOST: ${RCON_HOST:-127.0.0.1}
-  RCON_PORT: ${RCON_PORT:-25575}
-  RCON_PASSWORD: ${RCON_PASSWORD:?Set RCON_PASSWORD in .env}
-  RCON_TIMEOUT: ${RCON_TIMEOUT:-10}
-  AUTH_SECRET: ${AUTH_SECRET:?Set AUTH_SECRET in .env}
-  ALLOWED_GROUPS: ${ALLOWED_GROUPS:?Set ALLOWED_GROUPS in .env}
-  ADMIN_USERS: ${ADMIN_USERS:-[]}
-  RUNTIME_DIR: /run/gtnh
-
 services:
   mcp:
     build: .
     image: gtnh-mcp:local
     network_mode: host
     restart: unless-stopped
-    environment:
-      <<: *settings
-      MCP_HOST: 127.0.0.1
-      MCP_PORT: ${MCP_PORT:-8000}
+    env_file: .env
     volumes:
-      - runtime:/run/gtnh
+      - runtime:${RUNTIME_DIR:-/run/gtnh}
     depends_on:
       restore:
         condition: service_healthy
@@ -28,8 +15,8 @@ services:
     cap_drop: [ALL]
     security_opt: [no-new-privileges:true]
     healthcheck:
-      test: [CMD, python, -c, "import os,urllib.request; urllib.request.urlopen('http://127.0.0.1:'+os.environ['MCP_PORT']+'/health',timeout=3)"]
-      interval: 30s
+      test: [CMD, python, -c, "import os,urllib.request; h=os.environ.get('MCP_HOST','127.0.0.1'); h='127.0.0.1' if h=='0.0.0.0' else h; h='[::1]' if h=='::' else ('['+h+']' if ':' in h else h); urllib.request.build_opener(urllib.request.ProxyHandler({})).open('http://'+h+':'+os.environ.get('MCP_PORT','8000')+'/health',timeout=3)"]
+      interval: 10s
       timeout: 5s
       retries: 3
 
@@ -38,45 +25,28 @@ services:
     image: gtnh-mcp:local
     command: [gtnh-restore]
     user: "0:10001"
+    group_add:
+      - ${DOCKER_GID:?Set DOCKER_GID from the Docker socket group}
     network_mode: host
     restart: unless-stopped
     stop_grace_period: 35m
+    env_file: .env
     environment:
-      <<: *settings
       CONTAINER_NAME: ${GTNH_CONTAINER_NAME:?Set GTNH_CONTAINER_NAME}
-      WORLD_DIRECTORY: ${WORLD_DIRECTORY:-World}
-      SERVER_ROOT: /server
-      BACKUP_DIR: /backups
-      STATE_DIR: /state
-      STOP_TIMEOUT: ${STOP_TIMEOUT:-180}
-      STARTUP_TIMEOUT: ${STARTUP_TIMEOUT:-900}
-      MAX_ARCHIVE_BYTES: ${MAX_ARCHIVE_BYTES:-107374182400}
-      MAX_ARCHIVE_MEMBERS: ${MAX_ARCHIVE_MEMBERS:-1000000}
-      FREE_SPACE_RESERVE: ${FREE_SPACE_RESERVE:-1073741824}
     volumes:
-      - runtime:/run/gtnh
-      - restore-state:/state
-      - type: bind
-        source: ${GTNH_SERVER_ROOT:?Set GTNH_SERVER_ROOT}
-        target: /server
-        bind:
-          create_host_path: false
-      - type: bind
-        source: ${GTNH_BACKUP_DIR:?Set GTNH_BACKUP_DIR}
-        target: /backups
-        read_only: true
-        bind:
-          create_host_path: false
+      - runtime:${RUNTIME_DIR:-/run/gtnh}
+      - restore-state:${STATE_DIR:-/state}
+      - ${GTNH_SERVER_ROOT:?Set GTNH_SERVER_ROOT}:${SERVER_ROOT:-/gtnh}
       - /var/run/docker.sock:/var/run/docker.sock
     read_only: true
     tmpfs: [/tmp]
     healthcheck:
-      # The HTTP hostname is a placeholder; the connection uses the UDS path.
-      test: [CMD, python, -c, "import httpx; c=httpx.Client(transport=httpx.HTTPTransport(uds='/run/gtnh/restore.sock')); c.get('http://localhost/health',timeout=3).raise_for_status()"]
-      interval: 15s
+      # HTTP metadata uses localhost; the UDS path selects the connection.
+      test: [CMD, python, -c, "import os,httpx; p=os.environ.get('RUNTIME_DIR','/run/gtnh')+'/restore.sock'; c=httpx.Client(transport=httpx.HTTPTransport(uds=p)); c.get('http://localhost/health',timeout=3).raise_for_status()"]
+      interval: 10s
       timeout: 5s
       retries: 3
-      start_period: 35m
+      start_period: 10s
 
 volumes:
   runtime:
