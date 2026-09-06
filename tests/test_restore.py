@@ -10,8 +10,8 @@ from gtnh_mcp.backups import Backups
 from gtnh_mcp.rcon import OperationError
 from gtnh_mcp.restore import RestoreManager, atomic_json, move
 
-ADMIN = Actor("test", "group", "admin")
-MEMBER = Actor("test", "group", "member")
+ADMIN = Actor("test:group:admin")
+MEMBER = Actor("test:group:member")
 
 
 class FakeControl:
@@ -65,9 +65,7 @@ def request(manager):
 
 
 def confirm(manager, job):
-    result = manager.confirm(
-        Actor("test", "group", "admin", "confirm", job["id"]), job["id"]
-    )
+    result = manager.confirm(ADMIN, job["id"])
     for future in manager.futures:
         future.result(timeout=10)
     return result
@@ -172,14 +170,12 @@ def test_success_preserves_old_and_idempotent_confirmation(manager, settings):
     assert not manager.marker.exists()
 
 
-def test_confirmation_acl_and_expiry(manager):
-    with pytest.raises(Denied):
-        manager.request(MEMBER, manager.backups.listing()[0]["id"])
+def test_confirmation_owner_and_expiry(manager):
     job = request(manager)
     for actor in [
-        ADMIN,
-        Actor("test", "other", "admin", "confirm", job["id"]),
-        Actor("test", "group", "admin", "confirm", "wrong"),
+        MEMBER,
+        Actor("test:other:admin"),
+        Actor(),
     ]:
         with pytest.raises(Denied):
             manager.confirm(actor, job["id"])
@@ -281,9 +277,8 @@ def test_interrupted_switch_recovery(manager, settings, moves, legacy):
     assert not manager.marker.exists()
 
 
-def test_status_authorization(manager):
+def test_status_available_to_authenticated_clients(manager):
     job = request(manager)
-    assert manager.status(MEMBER) == []
-    with pytest.raises(Denied):
-        manager.status(MEMBER, job["id"])
+    assert manager.status(MEMBER)[0]["id"] == job["id"]
+    assert manager.status(MEMBER, job["id"])[0]["id"] == job["id"]
     assert manager.status(ADMIN)[0]["id"] == job["id"]

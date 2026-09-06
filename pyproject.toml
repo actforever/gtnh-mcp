@@ -11,7 +11,6 @@ dependencies = [
     "mcrcon==0.7.0",
     "fastmcp>=3.4.7,<4",
     "httpx>=0.28,<1",
-    "PyJWT>=2.10,<3",
     "filelock>=3.16,<4",
     "docker>=7.1,<8",
     "uvicorn>=0.35,<1",

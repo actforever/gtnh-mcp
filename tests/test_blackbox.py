@@ -17,6 +17,8 @@ from mcp.client.streamable_http import streamablehttp_client
 from test_auth_rcon import token
 from test_bridge import Bridge, Event
 
+from gtnh_mcp.auth import Actor, encode_actor
+
 pytestmark = pytest.mark.blackbox
 ROOT = Path(__file__).resolve().parents[1]
 
@@ -106,10 +108,17 @@ def services(settings, tmp_path, monkeypatch):
             log.close()
 
 
-async def call(services, name, arguments=None, **claims):
+async def call(services, name, arguments=None, actor="test:group:admin"):
     async with streamablehttp_client(
         services["url"],
-        headers={"Authorization": "Bearer " + token(services["settings"], **claims)},
+        headers={
+            "Authorization": "Bearer " + token(services["settings"]),
+            **(
+                {"X-GTNH-Actor": encode_actor(Actor(actor))}
+                if actor is not None
+                else {}
+            ),
+        },
     ) as (read, write, _):
         async with ClientSession(read, write) as session:
             await session.initialize()
@@ -146,8 +155,7 @@ async def test_full_blackbox(services):
         for encoded in [
             "",
             "invalid",
-            token(settings, group="wrong"),
-            token(settings, exp=1),
+            "old.jwt.token",
         ]:
             response = await client.post(
                 services["url"],
@@ -180,46 +188,56 @@ async def test_full_blackbox(services):
                     tool.inputSchema.get("properties", {})
                 )
 
-    bridge = Bridge(services["url"], settings.auth_secret.get_secret_value())
+    bridge = Bridge(
+        services["url"],
+        settings.auth_secret.get_secret_value(),
+        ["test:group"],
+        ["test:admin"],
+    )
     assert "Alice" in await bridge.tool(Event(user="member"), "list_players", {})
     assert "OK: say hello" in await bridge.tool(
         Event(user="member"), "announce", {"message": "hello"}
     )
     assert (
-        "save-all" in data(await call(services, "save_world", sub="member"))["response"]
+        "save-all" in data(await call(services, "save_world", actor=None))["response"]
     )
     assert (
         data(await call(services, "add_whitelist", {"player": "Alice"}))["response"]
         == "OK: whitelist add Alice"
     )
-    assert (
-        await call(services, "add_whitelist", {"player": "Mallory"}, sub="member")
-    ).isError
+    with pytest.raises(ValueError):
+        await bridge.tool(Event(user="member"), "add_whitelist", {"player": "Mallory"})
     assert (await call(services, "announce", {"message": "hi\nstop"})).isError
     assert (await call(services, "execute_command", {"command": "stop"})).isError
 
-    backup = data(await call(services, "list_backups", sub="member"))[0]
-    assert (
-        await call(
-            services, "request_restore", {"backup_id": backup["id"]}, sub="member"
+    backup = data(await call(services, "list_backups", actor=None))[0]
+    with pytest.raises(ValueError):
+        await bridge.tool(
+            Event(user="member"), "request_restore", {"backup_id": backup["id"]}
         )
-    ).isError
     job = data(await call(services, "request_restore", {"backup_id": backup["id"]}))
     assert job["phase"] == "pending"
     assert (settings.server_root / "Worlds/data.txt").read_text() == "old"
-    assert (await call(services, "confirm_restore", {"job_id": job["id"]})).isError
+    assert (
+        await call(services, "confirm_restore", {"job_id": job["id"]}, actor=None)
+    ).isError
     assert (
         await call(
             services,
             "confirm_restore",
             {"job_id": job["id"]},
-            purpose="confirm",
-            confirmation="b" * 32,
+            actor="test:group:other",
         )
     ).isError
+    assert "无权" in await bridge.tool(
+        Event(user="member"), "restore_status", {"job_id": job["id"]}
+    )
     assert (
-        await call(services, "restore_status", {"job_id": job["id"]}, sub="member")
-    ).isError
+        data(await call(services, "restore_status", {"job_id": job["id"]}, actor=None))[
+            0
+        ]["id"]
+        == job["id"]
+    )
     await bridge.confirm(Event(), job["id"])
     assert (await await_job(services, job["id"]))["phase"] == "succeeded"
     for name in ("Worlds", "visualprospecting"):
@@ -290,18 +308,22 @@ async def test_full_blackbox(services):
 
 async def test_undo_blackbox(services):
     settings = services["settings"]
-    bridge = Bridge(services["url"], settings.auth_secret.get_secret_value())
+    bridge = Bridge(
+        services["url"],
+        settings.auth_secret.get_secret_value(),
+        ["test:group"],
+        ["test:admin"],
+    )
     backup = data(await call(services, "list_backups"))[0]
     original = data(
         await call(services, "request_restore", {"backup_id": backup["id"]})
     )
     await bridge.confirm(Event(), original["id"])
     assert (await await_job(services, original["id"]))["phase"] == "succeeded"
-    assert (
-        await call(
-            services, "request_undo_restore", {"job_id": original["id"]}, sub="member"
+    with pytest.raises(ValueError):
+        await bridge.tool(
+            Event(user="member"), "request_undo_restore", {"job_id": original["id"]}
         )
-    ).isError
     response = json.loads(
         await bridge.tool(Event(), "request_undo_restore", {"job_id": original["id"]})
     )
@@ -309,7 +331,9 @@ async def test_undo_blackbox(services):
     assert undo["phase"] == "pending"
     assert undo["undo_of"] == original["id"]
     assert (settings.server_root / "Worlds/data.txt").read_text() == "new"
-    assert (await call(services, "confirm_restore", {"job_id": undo["id"]})).isError
+    assert (
+        await call(services, "confirm_restore", {"job_id": undo["id"]}, actor=None)
+    ).isError
     await bridge.confirm(Event(), undo["id"])
     assert (await await_job(services, undo["id"]))["phase"] == "succeeded"
     for name in ("Worlds", "visualprospecting"):
@@ -327,3 +351,40 @@ async def test_undo_blackbox(services):
         httpx.get(services["docker"] + "/observations").json()["commands"].count("stop")
         == 2
     )
+
+
+async def test_inspector_fixed_key_and_helper_auth(services):
+    """An ordinary client needs only a fixed Bearer key, with no QQ metadata."""
+    settings = services["settings"]
+    async with httpx.AsyncClient(trust_env=False) as client:
+        for headers in [
+            {},
+            {"Authorization": "Bearer wrong"},
+            {"Authorization": "Bearer " + token(settings), "X-GTNH-Actor": "%%%"},
+        ]:
+            response = await client.post(
+                services["helper"] + "/rpc",
+                headers=headers,
+                json={"action": "confirm", "value": "a" * 32},
+            )
+            assert response.status_code == 403
+        assert httpx.get(services["docker"] + "/observations").json()["commands"] == []
+        response = await client.post(
+            services["helper"] + "/rpc",
+            headers={"Authorization": "Bearer " + token(settings)},
+            json={"action": "status"},
+        )
+        assert response.status_code == 200
+        assert response.json()["result"] == []
+
+    backup = data(await call(services, "list_backups", actor=None))[0]
+    job = data(
+        await call(services, "request_restore", {"backup_id": backup["id"]}, actor=None)
+    )
+    assert job["actor"] == "api-client"
+    result = data(
+        await call(services, "confirm_restore", {"job_id": job["id"]}, actor=None)
+    )
+    assert result["id"] == job["id"]
+    assert (await await_job(services, job["id"]))["phase"] == "succeeded"
+    assert (settings.server_root / "Worlds/data.txt").read_text() == "new"

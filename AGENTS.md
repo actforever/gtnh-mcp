@@ -3,11 +3,11 @@
 ## Current implementation
 
 - Backups support ZIP (Stored/Deflate with CRC validation) and tar.gz. `WORLD_DIRECTORY` defaults to `World`; NAS uses `backups/`. New jobs persist both restored directory names, while legacy journals without them retain `Worlds` semantics.
-- `request_undo_restore` creates a separately confirmed restore from a successful job's retained `previous` directories. `snapshots` fingerprints and copies the source without consuming it; the same state machine preserves the current world and handles failure rollback. Keep this tool registered in both MCP and the AstrBot bridge; confirmation remains command-only.
+- `request_undo_restore` creates a separately confirmed restore from a successful job's retained `previous` directories. `snapshots` fingerprints and copies the source without consuming it; the same state machine preserves the current world and handles failure rollback. Keep this tool registered in both MCP and the AstrBot bridge; confirmation remains command-only in the AstrBot bridge (direct authenticated MCP clients can confirm).
 
-- Python 3.13 / uv. `src/gtnh_mcp` contains configuration, signed identity validation, RCON, MCP tools, archive validation, Docker control and the persistent restore worker.
-- `astrbot_plugin` is the separately installed AstrBot bridge. Sign actual message identities; never accept identity or role from model arguments. Confirmation is a command, not an LLM tool.
-- Its signing secret comes from AstrBot's `GTNH_AUTH_SECRET`; plugin settings only contain the MCP URL. Do not register the service a second time through AstrBot native MCP configuration.
+- Python 3.13 / uv. `src/gtnh_mcp` contains configuration, fixed Bearer key validation, RCON, MCP tools, archive validation, Docker control and the persistent restore worker.
+- `astrbot_plugin` is the separately installed AstrBot bridge. Check QQ ACLs in the plugin and encode actual message identities as X-GTNH-Actor; never accept identity or role from model arguments. Confirmation is a command, not an LLM tool.
+- Plugin settings contain mcp_url, auth_secret, allowed_groups and admin_users. Nonblank page values override GTNH_AUTH_SECRET, ALLOWED_GROUPS and ADMIN_USERS in the AstrBot environment. Backend configuration contains no QQ ACLs. Do not register the service a second time through AstrBot native MCP configuration.
 - MCP and AstrBot use Linux Docker host networking. Only the restore helper mounts the Docker socket and server directories; MCP calls it through a Unix socket.
 - The restore HTTP client uses an explicit `http://localhost/rpc` URL without `base_url`; its hostname is only HTTP metadata. The UDS transport selects the actual socket path. Test-only loopback transport overrides the full RPC URL.
 - Details belong in `docs/architecture.md`, `docs/security.md`, `docs/restore.md`, `docs/configuration.md`, `docs/deployment.md`, and `docs/testing.md`.
@@ -24,7 +24,7 @@
 ## Invariants
 
 - No generic RCON tool, shell endpoint, arbitrary container selector, or caller-supplied filesystem path.
-- Verify identity on every call; group/admin ACLs are server configuration. Never log tokens, passwords or signing secrets.
+- Verify the fixed key on every backend call; group/admin ACLs and task visibility are enforced in the plugin. Never log tokens, passwords or secrets. Direct key holders have access to all MCP tools, including confirmation; missing actor metadata defaults to api-client.
 - Bind confirmation to actor, group, archive digest and expiry. Persist before side effects. Never automatically retry RCON writes.
 - Hold the shared operation lock through restoration; confirm exit before moving directories. Preserve old directories and stop on uncertain recovery state.
 - Destructive behavior requires meaningful failure and integration tests.

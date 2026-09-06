@@ -1,38 +1,37 @@
 # 身份与工具权限
 
-## 权限表
+## 固定密钥边界
 
-| MCP 工具 | 允许群内成员 | 配置中的管理员 |
+MCP /mcp 要求 `Authorization: Bearer <AUTH_SECRET>`；/health 公开。MCP 与恢复服务各自以常量时间比较固定密钥，无 JWT、签发流程或一分钟到期。密钥至少 32 字符，推荐随机生成。持有密钥的客户端可以直接调用全部工具，包括 confirm_restore 和全部任务查询；这是管理员级 API 凭据。
+
+QQ 群/管理员 ACL 仅由 AstrBot 插件检查。不要把密钥提供给普通群友或模型，不要同时从 AstrBot 原生 MCP 页面添加本服务。后者会跳过插件 ACL，也直接暴露确认工具。密钥泄漏时同时更新后端和插件，重建后端并重载插件；未更换前旧密钥一直有效。
+
+## 插件权限
+
+| 工具 | 允许群内成员 | 配置中的管理员 |
 | --- | --- | --- |
-| `list_players`, `announce`, `save_world` | 是 | 是 |
-| `list_backups` | 是 | 是 |
-| `restore_status` | 本人任务 | 全部任务 |
-| `list_whitelist`, `add_whitelist`, `remove_whitelist` | 否 | 是 |
-| `request_restore`, `request_undo_restore` | 否 | 是 |
-| `confirm_restore` | 否 | 原申请人在原群发送确认指令 |
+| list_players、announce、save_world、list_backups | 是 | 是 |
+| restore_status | 仅本人任务 | 全部任务 |
+| list_whitelist、add_whitelist、remove_whitelist | 否 | 是 |
+| request_restore、request_undo_restore | 否 | 是 |
+| confirm_restore | 否 | 仅人工 /gtnh_confirm 命令，且匹配原申请标识 |
 
-无任意 RCON、shell、任意文件路径或容器选择工具。公告只允许最多 300 字符的单行文本；玩家名只能由 1–16 位英文字母、数字和下划线组成。
+插件读取实际事件的 platform、group、sender；不读取消息里的身份声明，不接受模型传入身份或角色。管理员也必须处于允许群，私聊拒绝调用。任务查询在返回模型前按完整 actor 过滤；指定他人任务编号也不能获取其内容，异常响应不回传原始敏感正文。插件配置页优先、环境变量回退，详见 [配置说明](configuration.md)。
 
-## 信任边界
+## 任务归属与确认
 
-AstrBot 插件直接从消息事件读取 `get_platform_name()`、`get_group_id()`、`get_sender_id()`。不读取消息里的身份声明，不接受 LLM 传入身份或角色。私聊拒绝调用。
+插件通过 `X-GTNH-Actor` 传递 UTF-8 `platform:group:user` 的 Base64URL 编码。后端只解析为不透明字符串并转发给恢复服务，不解释 QQ 权限。缺少此头使用 `api-client`，非法编码、控制字符或超长标识被拒绝。旧日志 actor 保持原样兼容。
 
-QQ 官方接入复用这些统一事件接口。部署时在目标群用 `/gtnh_identity` 获取实际平台、群和用户字符串，不把开放平台身份替换成普通 QQ 号/群号；管理员确认仍须匹配原申请的完整平台、群、用户。QQ AppSecret 只供 AstrBot 官方适配器使用，插件签名使用独立的 `GTNH_AUTH_SECRET`。
+此头不是签名，拥有访问密钥者可以指定任意合法 actor；它用于可信客户端间的任务归属和误操作检查，不隔离不同密钥持有人。直接 Inspector 客户端不设置此头即可申请和确认自己的 api-client 任务。
 
-插件用共享随机密钥签发 HS256 JWT：固定 issuer `astrbot-gtnh`、audience `gtnh-mcp`，`iat`/`exp` 最大间隔 60 秒；身份字段为 `platform`、`group`、`sub`。MCP 和恢复服务分别验证，不依赖会话缓存的旧角色。
+恢复申请绑定 actor、来源内容指纹和十分钟期限。确认必须匹配原 actor（插件中含原群及用户），持久化后才能产生副作用。成功确认的重复请求返回同一任务，不重复停服。插件不将 confirm_restore 注册成 LLM 工具；固定密钥后端不再校验 purpose 字段。
 
-`ALLOWED_GROUPS` 为 `平台:群ID` JSON 数组；`ADMIN_USERS` 为 `平台:用户ID` JSON 数组。两项以服务端配置为准；管理员也必须来自允许的群。更改 ACL 或密钥后重新创建两个服务，并同步更新 AstrBot 环境变量。
+## 文件、容器与日志
 
-普通工具凭据的 `purpose=tool`。只有插件的 `/gtnh_confirm <任务编号>` 指令处理器产生 `purpose=confirm` 和绑定编号的 `confirmation` 字段；确认凭据不能调用其他工具。确认必须匹配原申请人的平台、群和用户，十分钟内有效，重复确认返回同一任务。
+没有任意 RCON、shell、文件路径或容器选择工具。公告是最多 300 字符单行文本；玩家名限 1–16 位英文字母、数字、下划线。写操作不自动重试。
 
-`confirm_restore` 作为 MCP 接口存在，但不注册为 AstrBot LLM 工具，且 MCP 强制校验专用凭据。请勿同时在 AstrBot 原生 MCP 配置中再次添加本服务。仅靠系统提示词限制恢复不构成权限控制。
+MCP 非 root 且不挂载游戏目录或 Docker socket；restore 通过私有 Unix socket 接受固定动作。Docker socket 本身具有高权限，根目录挂载也可写。运行目录和状态卷须保护，不向其他服务开放。
 
-## 部署与日志
+默认只监听 NAS 回环地址；远程调试走 SSH 隧道。HTTP 不加密，不将固定密钥直接通过公网明文传输。插件不继承 HTTP 代理、不跟随重定向。日志只记录操作、调用者标识、任务和状态，不记录访问密钥、密码或命令参数；传输异常不直接发送给群友。
 
-默认只监听 localhost。共享密钥至少 32 字符，应随机生成；不应让不可信 AstrBot 插件或工具读取进程环境，也不应向该机器人开放通用 shell、文件读取或命令派发能力。持有签名密钥的进程属于可信边界。
-
-插件使用直接 HTTP 连接，不继承宿主环境的 HTTP 代理，也不自动跟随重定向。MCP URL 应直接填写完整 `/mcp` 地址。
-
-操作日志记录真实身份、工具、任务和状态，不记录密码、JWT、公告内容或命令参数。异常只回传经过筛选的错误，不把传输异常中的请求头发送到群里。`/health` 仅报告进程健康，不代表 GTNH 已启动。
-
-短期 JWT 在有效期内可重用，用于 MCP 握手和调用；它不是一次性票据。恢复确认的幂等性由持久化任务保证。日志、状态卷和旧存档不自动清理，管理员需要监控磁盘占用。
+共享密钥持有者和可读 AstrBot 配置的进程属于可信边界。/health 仅表示进程可用，不表示 GTNH、RCON 或备份已经验收。

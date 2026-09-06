@@ -16,7 +16,7 @@ from starlette.requests import Request
 from starlette.responses import JSONResponse
 from starlette.routing import Route
 
-from .auth import Denied, verify
+from .auth import ACTOR_HEADER, Denied, verify
 from .config import Settings
 from .container import ContainerControl
 from .rcon import OperationError
@@ -43,7 +43,7 @@ def create_app(settings: Settings, manager: RestoreManager) -> Starlette:
             header = request.headers.get("authorization", "")
             if not header.startswith("Bearer "):
                 raise Denied("缺少身份凭据")
-            actor = verify(header[7:], settings)
+            actor = verify(header[7:], settings, request.headers.get(ACTOR_HEADER))
             body = bytearray()
             async for chunk in request.stream():
                 body.extend(chunk)
@@ -52,8 +52,6 @@ def create_app(settings: Settings, manager: RestoreManager) -> Starlette:
             call = HelperCall.model_validate_json(body)
             if call.action == "confirm":
                 operation = partial(manager.confirm, actor, call.value)
-            elif actor.purpose != "tool":
-                raise Denied("确认凭据不能用于其他操作")
             elif call.action == "backups":
                 operation = manager.backups.listing
             elif call.action == "request":

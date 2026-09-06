@@ -3,62 +3,59 @@ import struct
 import threading
 import time
 
-import jwt
 import pytest
 from filelock import FileLock
 
-from gtnh_mcp.auth import Denied, verify
+from gtnh_mcp.auth import Actor, Denied, decode_actor, encode_actor, verify
 from gtnh_mcp.rcon import OperationError, RconService, command_for
 
 
-def token(settings, **changes):
-    claims = {
-        "iss": "astrbot-gtnh",
-        "aud": "gtnh-mcp",
-        "iat": int(time.time()),
-        "exp": int(time.time()) + 60,
-        "sub": "admin",
-        "platform": "test",
-        "group": "group",
-        "purpose": "tool",
-    }
-    claims.update(changes)
-    return jwt.encode(
-        claims, settings.auth_secret.get_secret_value(), algorithm="HS256"
-    )
+def token(settings):
+    return settings.auth_secret.get_secret_value()
 
 
 def test_auth(settings):
     actor = verify(token(settings), settings)
-    assert actor.key == "test:group:admin"
-    actor.require_admin(settings)
-    with pytest.raises(Denied):
-        verify(token(settings, sub="member"), settings).require_admin(settings)
+    assert actor.key == "api-client"
+    assert (
+        verify(token(settings), settings, encode_actor(Actor("test:group:admin"))).key
+        == "test:group:admin"
+    )
 
 
 @pytest.mark.parametrize(
-    "changes",
+    "invalid",
     [
-        {"exp": 1},
-        {"aud": "wrong"},
-        {"iss": "wrong"},
-        {"group": "other"},
-        {"iat": int(time.time()) + 1000},
-        {"exp": int(time.time()) + 1000},
-        {"sub": "a:b"},
-        {"purpose": "root"},
-        {"sub": ""},
+        "",
+        "invalid",
+        "eyJhbGciOiJIUzI1NiJ9.old.jwt",
+        "密钥错误",
     ],
 )
-def test_invalid_auth(settings, changes):
+def test_invalid_auth(settings, invalid):
     with pytest.raises(Denied):
-        verify(token(settings, **changes), settings)
+        verify(invalid, settings)
 
 
 def test_tampered_token(settings):
     encoded = token(settings)
     with pytest.raises(Denied):
         verify(encoded[:-8] + "AAAAAAAA", settings)
+
+
+@pytest.mark.parametrize(
+    "key", ["api-client", "qq_official:Group_OpenID:User_OpenID", "旧任务:用户"]
+)
+def test_opaque_actor_roundtrip(key):
+    assert decode_actor(encode_actor(Actor(key))).key == key
+
+
+@pytest.mark.parametrize(
+    "value", ["", "%%", "YWJj\n", "AA", "YQ=wrong", "_w", "A" * 2000]
+)
+def test_bad_actor_header(value):
+    with pytest.raises(Denied):
+        decode_actor(value)
 
 
 @pytest.mark.parametrize(

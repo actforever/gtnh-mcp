@@ -11,8 +11,6 @@ def settings(tmp_path):
     result = Settings(
         rcon_password="test-password",
         auth_secret="test-key-" * 8,
-        allowed_groups=["test:group"],
-        admin_users=["test:admin"],
         runtime_dir=tmp_path / "run",
         server_root=tmp_path / "server",
         backup_dir=tmp_path / "backup",

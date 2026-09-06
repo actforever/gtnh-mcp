@@ -84,18 +84,16 @@ def test_undo_changed_snapshot_fails_before_stop(manager):
 
 def test_undo_permissions_and_pending_source(manager):
     pending = request(manager)
-    with pytest.raises(Denied):
+    with pytest.raises(OperationError):
         manager.request_undo(MEMBER, pending["id"])
     with pytest.raises(OperationError):
         manager.request_undo(ADMIN, pending["id"])
     confirm(manager, pending)
     undo = manager.request_undo(ADMIN, pending["id"])
     with pytest.raises(Denied):
-        manager.confirm(ADMIN, undo["id"])
+        manager.confirm(MEMBER, undo["id"])
     with pytest.raises(Denied):
-        manager.confirm(
-            Actor("test", "other", "admin", "confirm", undo["id"]), undo["id"]
-        )
+        manager.confirm(Actor("test:other:admin"), undo["id"])
 
 
 def test_undo_missing_snapshot_rejected(manager):

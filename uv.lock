@@ -533,7 +533,6 @@ dependencies = [
     { name = "httpx" },
     { name = "mcrcon" },
     { name = "pydantic" },
-    { name = "pyjwt" },
     { name = "starlette" },
     { name = "uvicorn" },
 ]
@@ -553,7 +552,6 @@ requires-dist = [
     { name = "httpx", specifier = ">=0.28,<1" },
     { name = "mcrcon", specifier = "==0.7.0" },
     { name = "pydantic", specifier = ">=2.11,<3" },
-    { name = "pyjwt", specifier = ">=2.10,<3" },
     { name = "starlette", specifier = ">=1,<2" },
     { name = "uvicorn", specifier = ">=0.35,<1" },
 ]

@@ -4,36 +4,31 @@ import asyncio
 import logging
 
 import httpx
-import jwt
 from fastmcp import FastMCP
 from fastmcp.exceptions import ToolError
 from fastmcp.server.auth import AccessToken, TokenVerifier
-from fastmcp.server.dependencies import get_access_token
+from fastmcp.server.dependencies import get_access_token, get_http_headers
 from starlette.responses import JSONResponse
 
-from .auth import Denied, verify
+from .auth import ACTOR_HEADER, Actor, Denied, encode_actor, verify
 from .config import Settings
 from .rcon import OperationError, RconService
 
 
-class IdentityVerifier(TokenVerifier):
+class KeyVerifier(TokenVerifier):
     def __init__(self, settings):
         super().__init__()
         self.settings = settings
 
     async def verify_token(self, token: str):
         try:
-            actor = verify(token, self.settings)
+            verify(token, self.settings)
         except Denied:
             return None
-        claims = jwt.decode(token, options={"verify_signature": False})
         return AccessToken(
             token=token,
-            client_id=actor.key,
-            subject=actor.key,
+            client_id="gtnh-api-client",
             scopes=[],
-            expires_at=int(claims["exp"]),
-            claims=claims,
         )
 
 
@@ -51,13 +46,18 @@ class HelperClient:
         )
         return httpx.AsyncClient(transport=transport, timeout=600)
 
-    async def call(self, token: str, action: str, value: str = ""):
+    async def call(
+        self, token: str, action: str, value: str = "", actor: Actor = Actor()
+    ):
         try:
             async with self.connection() as client:
                 response = await client.post(
                     self.rpc_url,
                     json={"action": action, "value": value},
-                    headers={"Authorization": f"Bearer {token}"},
+                    headers={
+                        "Authorization": f"Bearer {token}",
+                        ACTOR_HEADER: encode_actor(actor),
+                    },
                 )
                 body = response.json()
                 if response.is_error:
@@ -71,25 +71,23 @@ class HelperClient:
 
 def create_server(settings: Settings, rcon=None, helper=None) -> FastMCP:
     server = FastMCP(
-        "GTNH Operations", auth=IdentityVerifier(settings), mask_error_details=True
+        "GTNH Operations", auth=KeyVerifier(settings), mask_error_details=True
     )
     rcon = rcon or RconService(settings)
     helper = helper or HelperClient(settings)
 
-    def identity(admin=False, confirm=False):
+    def identity():
         access = get_access_token()
         if access is None:
             raise Denied("缺少身份凭据")
-        actor = verify(access.token, settings)
-        if admin:
-            actor.require_admin(settings)
-        if actor.purpose != ("confirm" if confirm else "tool"):
-            raise Denied("凭据用途不匹配")
+        actor = verify(
+            access.token, settings, get_http_headers().get(ACTOR_HEADER.lower())
+        )
         return actor, access.token
 
-    async def execute(action: str, value: str = "", admin=False):
+    async def execute(action: str, value: str = ""):
         try:
-            actor, _ = identity(admin=admin)
+            actor, _ = identity()
             result = await asyncio.to_thread(rcon.execute, action, value)
             logging.getLogger(__name__).info(
                 "rcon actor=%s action=%s result=returned", actor.key, action
@@ -101,12 +99,10 @@ def create_server(settings: Settings, rcon=None, helper=None) -> FastMCP:
         except (Denied, OperationError) as exc:
             raise ToolError(str(exc)) from None
 
-    async def restore_call(action: str, value: str = "", admin=False, confirm=False):
+    async def restore_call(action: str, value: str = ""):
         try:
-            actor, token = identity(admin=admin, confirm=confirm)
-            if confirm and actor.confirmation != value:
-                raise Denied("确认编号与凭据不匹配")
-            return await helper.call(token, action, value)
+            actor, token = identity()
+            return await helper.call(token, action, value, actor)
         except (Denied, OperationError) as exc:
             raise ToolError(str(exc)) from None
 
@@ -127,18 +123,18 @@ def create_server(settings: Settings, rcon=None, helper=None) -> FastMCP:
 
     @server.tool
     async def list_whitelist() -> dict:
-        """管理员查询白名单。"""
-        return await execute("whitelist_list", admin=True)
+        """查询白名单；QQ 权限由插件检查。"""
+        return await execute("whitelist_list")
 
     @server.tool
     async def add_whitelist(player: str) -> dict:
-        """管理员将指定玩家加入白名单。"""
-        return await execute("whitelist_add", player, admin=True)
+        """将指定玩家加入白名单；QQ 权限由插件检查。"""
+        return await execute("whitelist_add", player)
 
     @server.tool
     async def remove_whitelist(player: str) -> dict:
-        """管理员将指定玩家移出白名单。"""
-        return await execute("whitelist_remove", player, admin=True)
+        """将指定玩家移出白名单；QQ 权限由插件检查。"""
+        return await execute("whitelist_remove", player)
 
     @server.tool
     async def list_backups() -> list[dict]:
@@ -147,22 +143,22 @@ def create_server(settings: Settings, rcon=None, helper=None) -> FastMCP:
 
     @server.tool
     async def request_restore(backup_id: str) -> dict:
-        """管理员申请指定备份恢复。只生成十分钟有效的确认编号，不停服。"""
-        return await restore_call("request", backup_id, admin=True)
+        """申请指定备份恢复。只生成十分钟有效的确认编号，不停服。"""
+        return await restore_call("request", backup_id)
 
     @server.tool
     async def request_undo_restore(job_id: str) -> dict:
-        """管理员申请撤销一次成功回档，恢复该任务执行前的存档；须本人确认，不合并进度。"""
-        return await restore_call("undo", job_id, admin=True)
+        """申请撤销一次成功回档，恢复该任务执行前的存档；须相同调用者确认，不合并进度。"""
+        return await restore_call("undo", job_id)
 
     @server.tool
     async def confirm_restore(job_id: str) -> dict:
-        """仅供可信插件确认指令调用；普通工具凭据不能执行。"""
-        return await restore_call("confirm", job_id, admin=True, confirm=True)
+        """明确确认恢复或撤销任务，必须与申请人标识一致；插件仅通过人工命令调用。"""
+        return await restore_call("confirm", job_id)
 
     @server.tool
     async def restore_status(job_id: str = "") -> list[dict]:
-        """查询恢复任务；留空列出本人任务，管理员可查看全部任务。"""
+        """查询恢复任务；留空列出全部。QQ 任务可见性由插件过滤。"""
         return await restore_call("status", job_id)
 
     @server.custom_route("/health", methods=["GET"])

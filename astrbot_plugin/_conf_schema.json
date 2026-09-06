@@ -3,5 +3,20 @@
     "description": "GTNH MCP Streamable HTTP 地址",
     "type": "string",
     "default": "http://127.0.0.1:8000/mcp"
+  },
+  "auth_secret": {
+    "description": "MCP 固定访问密钥（至少32字符）；留空读取 AstrBot 环境变量 GTNH_AUTH_SECRET",
+    "type": "string",
+    "default": ""
+  },
+  "allowed_groups": {
+    "description": "允许群 JSON 数组，例如 [\"qq_official:群标识\"]；留空读取 ALLOWED_GROUPS，[] 禁用所有群",
+    "type": "text",
+    "default": ""
+  },
+  "admin_users": {
+    "description": "管理员 JSON 数组，例如 [\"qq_official:用户标识\"]；留空读取 ADMIN_USERS，[] 不授予管理员权限",
+    "type": "text",
+    "default": ""
   }
 }

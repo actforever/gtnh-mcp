@@ -1,6 +1,5 @@
 """Environment-only deployment configuration; no secrets in reprs."""
 
-import json
 import os
 import re
 from pathlib import Path
@@ -45,13 +44,11 @@ class Settings(BaseModel):
     rcon_password: SecretStr
     rcon_timeout: int = Field(default=10, ge=1, le=120)
     auth_secret: SecretStr
-    allowed_groups: list[str]
-    admin_users: list[str] = []
     mcp_host: str = "127.0.0.1"
     mcp_port: int = Field(default=8000, ge=1, le=65535)
     runtime_dir: Path = Path("/run/gtnh")
-    server_root: Path = Path("/server")
-    backup_dir: Path = Path("/backups")
+    server_root: Path = Path("/gtnh")
+    backup_dir: Path = Path("/gtnh/backups")
     state_dir: Path = Path("/state")
     container_name: str = "gtnh"
     world_directory: str = "World"
@@ -76,8 +73,6 @@ class Settings(BaseModel):
             raise ValueError("AUTH_SECRET must contain at least 32 characters")
         if not self.rcon_password.get_secret_value():
             raise ValueError("RCON_PASSWORD must not be empty")
-        if not self.allowed_groups:
-            raise ValueError("ALLOWED_GROUPS must not be empty")
         return self
 
     @classmethod
@@ -86,11 +81,7 @@ class Settings(BaseModel):
         for name in cls.model_fields:
             value = os.environ.get(name.upper())
             if value is not None:
-                values[name] = (
-                    json.loads(value)
-                    if name in {"allowed_groups", "admin_users"}
-                    else value
-                )
+                values[name] = value
         return cls(**values)
 
     @property

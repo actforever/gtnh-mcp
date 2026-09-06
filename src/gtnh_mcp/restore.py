@@ -115,13 +115,7 @@ class RestoreManager:
                     for path in self.settings.state_dir.glob("*.json")
                 ]
             )
-            result = [
-                self.public(job)
-                for job in jobs
-                if job["actor"] == actor.key or actor.is_admin(self.settings)
-            ]
-            if job_id and not result:
-                raise Denied("无权查看此任务")
+            result = [self.public(job) for job in jobs]
             return sorted(result, key=lambda job: job["created"], reverse=True)
 
     @staticmethod
@@ -161,7 +155,6 @@ class RestoreManager:
 
     def request_undo(self, actor: Actor, job_id: str) -> dict:
         """Request a new restore from a successful job's retained previous worlds."""
-        actor.require_admin(self.settings)
         with self.mutex:
             source = self.load(job_id)
             if source["phase"] != "succeeded":
@@ -169,7 +162,6 @@ class RestoreManager:
             return self.create_request(actor, job_id, source)
 
     def create_request(self, actor: Actor, backup_id: str, source=None) -> dict:
-        actor.require_admin(self.settings)
         with self.mutex:
             if self.marker.exists():
                 raise OperationError("已有恢复任务或需要人工检查")
@@ -206,13 +198,10 @@ class RestoreManager:
             return self.public(job)
 
     def confirm(self, actor: Actor, job_id: str) -> dict:
-        actor.require_admin(self.settings)
-        if actor.purpose != "confirm" or actor.confirmation != job_id:
-            raise Denied("必须由管理员使用明确的恢复确认指令")
         with self.mutex:
             job = self.load(job_id)
             if job["actor"] != actor.key:
-                raise Denied("只能由原申请人在原群确认")
+                raise Denied("只能使用原申请人的调用者标识确认")
             if job["phase"] != "pending":
                 return self.public(job)
             if time.time() > job["expires"]:

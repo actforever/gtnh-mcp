@@ -4,17 +4,14 @@ from astrbot.api import AstrBotConfig
 from astrbot.api.event import AstrMessageEvent, filter
 from astrbot.api.star import Context, Star, register
 
-from .bridge import Bridge
+from .bridge import Bridge, resolve_config
 
 
 @register("astrbot_plugin_gtnh", "qqa", "GTNH 运维与受控备份恢复", "0.1.0")
 class GTNHPlugin(Star):
     def __init__(self, context: Context, config: AstrBotConfig):
         super().__init__(context)
-        self.bridge = Bridge(
-            config.get("mcp_url", "http://127.0.0.1:8000/mcp"),
-            os.environ.get("GTNH_AUTH_SECRET", ""),
-        )
+        self.bridge = Bridge(**resolve_config(config, os.environ))
 
     async def call(self, event, name, arguments=None):
         try:
@@ -98,7 +95,7 @@ class GTNHPlugin(Star):
 
     @filter.command("gtnh_confirm", priority=100)
     async def confirm(self, event: AstrMessageEvent, job_id: str):
-        # No llm_tool decorator: only the actual message command can mint this scope.
+        # Confirmation is only exposed as a message command, never an LLM tool.
         try:
             response = await self.bridge.confirm(event, job_id)
         except ValueError as exc:

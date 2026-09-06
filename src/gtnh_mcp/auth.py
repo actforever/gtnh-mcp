@@ -1,11 +1,14 @@
-"""Short-lived audience-bound assertions from the trusted AstrBot bridge."""
+"""Fixed API-key authentication and opaque restore ownership metadata."""
 
-import time
+import base64
+import binascii
+import hmac
+import re
 from dataclasses import dataclass
 
-import jwt
-
 from .config import Settings
+
+ACTOR_HEADER = "X-GTNH-Actor"
 
 
 class Denied(ValueError):
@@ -14,66 +17,39 @@ class Denied(ValueError):
 
 @dataclass(frozen=True)
 class Actor:
-    platform: str
-    group: str
-    user: str
-    purpose: str = "tool"
-    confirmation: str = ""
-
-    @property
-    def key(self) -> str:
-        return f"{self.platform}:{self.group}:{self.user}"
-
-    def is_admin(self, settings: Settings) -> bool:
-        return f"{self.platform}:{self.user}" in settings.admin_users
-
-    def require_admin(self, settings: Settings) -> None:
-        if not self.is_admin(settings):
-            raise Denied("此操作仅限配置中的管理员")
+    # Kept as the original string in journals for pre-migration compatibility.
+    key: str = "api-client"
 
 
-def verify(token: str, settings: Settings) -> Actor:
+def encode_actor(actor: Actor) -> str:
+    return (
+        base64.urlsafe_b64encode(actor.key.encode("utf-8")).decode("ascii").rstrip("=")
+    )
+
+
+def decode_actor(value: str | None) -> Actor:
+    if value is None:
+        return Actor()
     try:
-        claims = jwt.decode(
-            token,
-            settings.auth_secret.get_secret_value(),
-            algorithms=["HS256"],
-            audience="gtnh-mcp",
-            issuer="astrbot-gtnh",
-            options={
-                "require": [
-                    "exp",
-                    "iat",
-                    "iss",
-                    "aud",
-                    "sub",
-                    "platform",
-                    "group",
-                    "purpose",
-                ]
-            },
+        if len(value) > 1368 or not re.fullmatch(r"[A-Za-z0-9_-]+={0,2}", value):
+            raise ValueError
+        raw = base64.b64decode(
+            value + "=" * (-len(value) % 4), altchars=b"-_", validate=True
         )
-        if claims["exp"] - claims["iat"] > 60 or claims["iat"] > time.time():
-            raise ValueError("Invalid lifetime")
-        for key in ("platform", "group", "sub"):
-            if (
-                not isinstance(claims[key], str)
-                or not claims[key]
-                or ":" in claims[key]
-                or any(ord(c) < 32 for c in claims[key])
-            ):
-                raise ValueError("Invalid identity")
-        if claims["purpose"] not in {"tool", "confirm"}:
-            raise ValueError("Invalid purpose")
-        actor = Actor(
-            claims["platform"],
-            claims["group"],
-            claims["sub"],
-            claims["purpose"],
-            claims.get("confirmation", ""),
-        )
-        if f"{actor.platform}:{actor.group}" not in settings.allowed_groups:
-            raise ValueError("Group denied")
+        key = raw.decode("utf-8")
+        if not key or len(raw) > 1024 or any(ord(c) < 32 or ord(c) == 127 for c in key):
+            raise ValueError
+        actor = Actor(key)
+        if encode_actor(actor) != value.rstrip("="):
+            raise ValueError
         return actor
-    except (jwt.PyJWTError, ValueError, TypeError, KeyError) as exc:
-        raise Denied("身份凭据无效、过期或群未授权") from exc
+    except (ValueError, UnicodeError, binascii.Error) as exc:
+        raise Denied("调用者标识格式无效") from exc
+
+
+def verify(token: str, settings: Settings, actor_header: str | None = None) -> Actor:
+    if not hmac.compare_digest(
+        token.encode("utf-8"), settings.auth_secret.get_secret_value().encode("utf-8")
+    ):
+        raise Denied("访问密钥无效")
+    return decode_actor(actor_header)
